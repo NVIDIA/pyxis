@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+#export DH_VERBOSE=1
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+ifdef DO_RELEASE
+	sed -i "s/UNRELEASED/$(shell lsb_release -c -s)/" $(CURDIR)/debian/changelog
+endif
+	dh $@
+
+override_dh_auto_install:
+	dh_auto_install -- prefix= libdir=/usr/lib/$(DEB_HOST_MULTIARCH) datarootdir=/usr/share
