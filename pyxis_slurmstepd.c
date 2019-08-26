@@ -1009,9 +1009,7 @@ fail:
 	 *
 	 * See https://bugs.schedmd.com/show_bug.cgi?id=7573 for more details.
 	 */
-	slurm_debug("pyxis: user_init failed() with rc=%d", rv);
-	slurm_debug("pyxis: however, pyxis will return rc=0 from user_init() and postpone the error to task_init_privileged()");
-	slurm_debug("pyxis: see https://bugs.schedmd.com/show_bug.cgi?id=7573 for details");
+	slurm_debug("pyxis: user_init() failed with rc=%d; postponing error for now, will report later", rv);
 	context.user_init_rv = rv;
 	return (0);
 }
