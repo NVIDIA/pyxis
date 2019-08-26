@@ -61,6 +61,7 @@ struct plugin_context {
 	struct plugin_args args;
 	struct job_info job;
 	struct container container;
+	int user_init_rv;
 };
 
 static struct plugin_context context = {
@@ -69,6 +70,7 @@ static struct plugin_context context = {
 	.args = { .docker_image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL },
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0 },
 	.container = { .name = NULL, .userns_fd = -1, .mntns_fd = -1, .cwd_fd = -1 },
+	.user_init_rv = 0,
 };
 
 static int spank_option_docker_image(int val, const char *optarg, int remote);
@@ -1000,7 +1002,18 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	rv = 0;
 
 fail:
-	return (rv);
+	/*
+	 * Errors from user_init() are not propagated back to srun. Rather than fail here and have srun
+	 * report rc=0 (success), we return 0 here and throw the error in task_init_privileged()
+	 * instead, which will properly propagate the error back to srun.
+	 *
+	 * See https://bugs.schedmd.com/show_bug.cgi?id=7573 for more details.
+	 */
+	slurm_debug("pyxis: user_init failed() with rc=%d", rv);
+	slurm_debug("pyxis: however, pyxis will return rc=0 from user_init() and postpone the error to task_init_privileged()");
+	slurm_debug("pyxis: see https://bugs.schedmd.com/show_bug.cgi?id=7573 for details");
+	context.user_init_rv = rv;
+	return (0);
 }
 
 static int spank_copy_env(spank_t sp, const char *from, const char *to, int overwrite)
@@ -1129,6 +1142,9 @@ int slurm_spank_task_init_privileged(spank_t sp, int ac, char **av)
 
 	if (!context.enabled)
 		return (0);
+
+	if (context.user_init_rv != 0)
+		return (context.user_init_rv);
 
 	ret = setns(context.container.mntns_fd, CLONE_NEWNS);
 	if (ret < 0) {
