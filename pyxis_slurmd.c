@@ -6,7 +6,7 @@
 #include <ftw.h>
 #include <string.h>
 
-#include <slurm/spank.h>
+#include <spank.h>
 
 #include "common.h"
 
