@@ -427,7 +427,11 @@ static void enroot_reset_log(void)
 	xclose(context.log_fd);
 
 	// We can use CLOEXEC here since we dup2(2) this file descriptor when needed.
+	#ifdef HAVE_MEMFD_CREATE
 	context.log_fd = memfd_create("enroot-log", MFD_CLOEXEC);
+	#else
+	context.log_fd = shm_open("/enroot-log", O_RDWR | O_CREAT | O_EXCL | FD_CLOEXEC, S_IRWXU);
+	#endif
 	if (context.log_fd < 0)
 		slurm_info("pyxis: couldn't create in-memory log file: %s", strerror(errno));
 
