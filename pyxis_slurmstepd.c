@@ -172,7 +172,7 @@ static int add_mount(const char *source, const char *target)
 	char *entry = NULL;
 	int rv = -1;
 
-	ret = asprintf(&entry, "%s %s x-create=auto,rbind,rprivate", source, target);
+	ret = asprintf(&entry, "%s %s x-create=auto,rbind", source, target);
 	if (ret < 0) {
 		slurm_error("pyxis: could not allocate memory");
 		goto fail;
