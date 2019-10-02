@@ -68,8 +68,8 @@ NAME="CentOS Linux"
 PRETTY_NAME="CentOS Linux 7 (Core)"
 CPE_NAME="cpe:/o:centos:centos:7"
 
-$ # run inside the container, but mount the file from the host
-$ srun --container-image=centos --container-mounts=/etc/os-release:/etc/os-release grep NAME /etc/os-release
+$ # mount a file from the host and run the command on it, from inside the container
+$ srun --container-image=centos --container-mounts=/etc/os-release:/host/os-release grep NAME /host/os-release
 NAME="Ubuntu"
 PRETTY_NAME="Ubuntu 18.04.2 LTS"
 VERSION_CODENAME=bionic
