@@ -419,7 +419,7 @@ static void enroot_reset_log(void)
 {
 	xclose(context.log_fd);
 
-	// We can use CLOEXEC here since we dup2(2) this file descriptor when needed.
+	/* We can use CLOEXEC here since we dup2(2) this file descriptor when needed. */
 	context.log_fd = pyxis_memfd_create("enroot-log", MFD_CLOEXEC);
 	if (context.log_fd < 0)
 		slurm_info("pyxis: couldn't create in-memory log file: %s", strerror(errno));
