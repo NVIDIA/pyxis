@@ -221,11 +221,11 @@ static int spank_option_mount(int val, const char *optarg, int remote)
 		dst = arg;
 		src = strsep(&dst, ":");
 		if (src == NULL || *src == '\0') {
-			slurm_error("pyxis: --container-mounts: invalid format");
+			slurm_error("pyxis: --container-mounts: invalid format: %s", optarg);
 			goto fail;
 		}
 		if (dst == NULL || *dst == '\0') {
-			slurm_error("pyxis: --container-mounts: invalid format");
+			slurm_error("pyxis: --container-mounts: invalid format: %s", optarg);
 			goto fail;
 		}
 
