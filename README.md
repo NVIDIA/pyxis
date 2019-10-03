@@ -39,8 +39,9 @@ $ srun --help
       --container-image=[USER@][REGISTRY#]IMAGE[:TAG]
                               [pyxis] docker image to use, as an enroot URI
 
-      --container-mounts=SRC:DST[,SRC:DST...]
-                              [pyxis] bind mount[s] inside the container
+      --container-mounts=SRC:DST[:FLAGS][,SRC:DST...]
+                              [pyxis] bind mount[s] inside the container. Mount
+                              flags are separated with "+", e.g. "ro+rprivate"
 
       --container-workdir=PATH
                               [pyxis] working directory inside the container
