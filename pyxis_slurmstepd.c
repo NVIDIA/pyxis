@@ -73,6 +73,14 @@ static struct plugin_context context = {
 	.user_init_rv = 0,
 };
 
+static const char *static_mount_entries[] = {
+	"none /tmp x-detach,nofail,silent",
+	"/tmp /tmp x-create=dir,rw,bind,nosuid,nodev",
+	/* PMIX_SERVER_TMPDIR is the only PMIX variable set in the SPANK environment when calling enroot */
+	"${PMIX_SERVER_TMPDIR:-/dev/null} ${PMIX_SERVER_TMPDIR:-/dev/null} x-create=dir,rw,bind,nofail,silent",
+	NULL
+};
+
 static int spank_option_docker_image(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
@@ -378,15 +386,6 @@ static int enroot_create_user_runtime_dir(void)
 	return (0);
 }
 
-static const char *static_mount_entries[] = {
-	"none /tmp x-detach,nofail,silent",
-	"/tmp /tmp x-create=dir,rw,bind,nosuid,nodev",
-	/* PMIX_SERVER_TMPDIR is the only PMIX variable set in the SPANK environment when calling enroot */
-	"${PMIX_SERVER_TMPDIR:-/dev/null} ${PMIX_SERVER_TMPDIR:-/dev/null} x-create=dir,rw,bind,nofail,silent",
-	NULL
-};
-
-
 int slurm_spank_init_post_opt(spank_t sp, int ac, char **av)
 {
 	int ret;
@@ -412,12 +411,6 @@ int slurm_spank_init_post_opt(spank_t sp, int ac, char **av)
 	ret = enroot_create_user_runtime_dir();
 	if (ret < 0)
 		return (-1);
-
-	for (int i = 0; static_mount_entries[i] != NULL; ++i) {
-		ret = add_mount_entry(static_mount_entries[i]);
-		if (ret < 0)
-			return (-1);
-	}
 
 	return (0);
 }
@@ -852,7 +845,14 @@ static int enroot_create_start_config(void)
 	if (ret < 0)
 		goto fail;
 
-	/* mount entries (bind mounts + static mounts) */
+	/* static mount entries */
+	for (int i = 0; static_mount_entries[i] != NULL; ++i) {
+		ret = fprintf(f, "\techo \"%s\"\n", static_mount_entries[i]);
+		if (ret < 0)
+			goto fail;
+	}
+
+	/* bind mount entries */
 	for (int i = 0; i < context.args.mounts_len; ++i) {
 		ret = fprintf(f, "\techo \"%s\"\n", context.args.mounts[i]);
 		if (ret < 0)
