@@ -127,7 +127,7 @@ static int spank_option_docker_image(int val, const char *optarg, int remote)
 		return (-1);
 	}
 
-	/* SLURM can call us twice with the same value, check if it's a different value than before. */
+	/* Slurm can call us twice with the same value, check if it's a different value than before. */
 	if (context.args.docker_image != NULL) {
 		if (strcmp(context.args.docker_image + strlen("docker://"), optarg) == 0)
 			return (0);
@@ -269,7 +269,7 @@ static int spank_option_workdir(int val, const char *optarg, int remote)
 		return (-1);
 	}
 
-	/* SLURM can call us twice with the same value, check if it's a different value than before. */
+	/* Slurm can call us twice with the same value, check if it's a different value than before. */
 	if (context.args.workdir != NULL) {
 		if (strcmp(context.args.workdir, optarg) == 0)
 			return (0);
@@ -289,7 +289,7 @@ static int spank_option_container_name(int val, const char *optarg, int remote)
 		return (-1);
 	}
 
-	/* SLURM can call us twice with the same value, check if it's a different value than before. */
+	/* Slurm can call us twice with the same value, check if it's a different value than before. */
 	if (context.args.container_name != NULL) {
 		if (strcmp(context.args.container_name, optarg) == 0)
 			return (0);
@@ -306,7 +306,7 @@ int slurm_spank_init(spank_t sp, int ac, char **av)
 {
 	spank_err_t rc;
 
-	/* SLURM bug: see pyxis_slurmd.c */
+	/* Slurm bug: see pyxis_slurmd.c */
 	if (spank_context() == S_CTX_SLURMD)
 		return slurm_spank_slurmd_init(sp, ac, av);
 
@@ -316,7 +316,7 @@ int slurm_spank_init(spank_t sp, int ac, char **av)
 	if (spank_context() == S_CTX_LOCAL) {
 		/*
 		 * Show slurm_info() messages by default.
-	         * Can get back to default slurm behavior by setting SLURMD_DEBUG=0.
+	         * Can get back to default Slurm behavior by setting SLURMD_DEBUG=0.
 		 */
 		if (setenv("SLURMD_DEBUG", "1", 0) != 0) {
 			slurm_error("pyxis: failed to set SLURMD_DEBUG: %s", strerror(errno));
@@ -1141,10 +1141,10 @@ static int pytorch_setup(spank_t sp)
  * We used to join the mount namespace in slurm_spank_task_init(), but had to move it to
  * slurm_spank_task_init_privileged() to overcome a limitation of the SPANK API.
  *
- * SLURM currently uses execve(2) instead of execvpe(2), hence it needs to
+ * Slurm currently uses execve(2) instead of execvpe(2), hence it needs to
  * resolve the full path of the binary to execute. This resolution is done just
  * before the call to the slurm_spank_task_init callback, so it is done against
- * the host filesystem. For SLURM 18.08.7, see function exec_task() in
+ * the host filesystem. For Slurm 18.08.7, see function exec_task() in
  * src/slurmd/slurmstepd/task.c, the path resolution function is _build_path()
  *
  * The workaround is to join the mount namespace before the call to

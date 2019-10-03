@@ -11,7 +11,7 @@
 #include "common.h"
 
 /*
- * SLURM bug: this SPANK callback is never called, instead slurm_spank_init is called with
+ * Slurm bug: this SPANK callback is never called, instead slurm_spank_init is called with
  * context S_CTX_SLURMD.
  */
 int slurm_spank_slurmd_init(spank_t sp, int ac, char **av)
@@ -23,7 +23,7 @@ int slurm_spank_slurmd_init(spank_t sp, int ac, char **av)
 	mask = umask(0);
 
 	/*
-	 * Since SLURM might not be configured to integrate with PAM and
+	 * Since Slurm might not be configured to integrate with PAM and
 	 * logind, we can't assume /run/user/<uid> will be present.
 	 * Instead, we create a new directory under an existing tmpfs (e.g. /run/pyxis).
 	 */
