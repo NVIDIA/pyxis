@@ -51,6 +51,14 @@ $ srun --help
                               containers are not. If a container with this name
                               already exists, the existing container is used and
                               the import is skipped.
+
+      --container-mount-home  [pyxis] bind mount the user's home directory.
+                              System-level enroot settings might cause this
+                              directory to be already-mounted.
+
+      --no-container-mount-home
+                              [pyxis] do not bind mount the user's home
+                              directory
 ```
 
 ## Examples
