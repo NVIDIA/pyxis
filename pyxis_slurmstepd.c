@@ -1277,7 +1277,7 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 
 	ret = seccomp_set_filter();
 	if (ret < 0) {
-		slurm_error("pyxis: seccomp filter failed");
+		slurm_error("pyxis: seccomp filter failed: %s", strerror(errno));
 		goto fail;
 	}
 
