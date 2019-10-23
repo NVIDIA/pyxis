@@ -510,6 +510,7 @@ static void enroot_print_last_log(void)
 
 static const char *enroot_want_env[] = {
 	"HOME=",
+	"TERM=",
 	"NVIDIA_VISIBLE_DEVICES=",
 	"MELLANOX_VISIBLE_DEVICES=",
 	"ENROOT_CONFIG_PATH=",
