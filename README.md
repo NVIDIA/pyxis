@@ -22,12 +22,14 @@ Pyxis requires the [enroot](https://github.com/nvidia/enroot) container utility 
 $ # Option 1: quick install from sources
 $ sudo make install
 $ sudo ln -s /usr/local/share/pyxis/pyxis.conf /etc/slurm-llnl/plugstack.conf.d/pyxis.conf
+$ sudo systemctl restart slurmd
 
 $ # Option 2: generate a deb package and install it
 $ make orig
 $ make deb
 $ sudo dpkg -i ../nvslurm-plugin-pyxis_*_amd64.deb
 $ sudo ln -s /usr/share/pyxis/pyxis.conf /etc/slurm-llnl/plugstack.conf.d/pyxis.conf
+$ sudo systemctl restart slurmd
 ```
 
 ## Usage
