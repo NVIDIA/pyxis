@@ -552,6 +552,29 @@ static int enroot_set_env(void)
 	return (0);
 }
 
+static char* join_strings(char *const strings[])
+{
+	int len = 0;
+	int progress = 0;
+	char * result = NULL;
+
+	for (int i=0; strings[i] != NULL; ++i) {
+		len += strlen(strings[i]);
+		len += 1;
+	}
+	result = malloc(len);
+	if (result == NULL)
+		return NULL;
+
+	for (int i=0; strings[i] != NULL; ++i) {
+		if (i != 0)
+			result[progress++] = ' ';
+		strcpy(&result[progress], strings[i]);
+		progress += strlen(strings[i]);
+	}
+	return result;
+}
+
 static pid_t enroot_exec(uid_t uid, gid_t gid, char *const argv[])
 {
 	int ret;
@@ -560,6 +583,12 @@ static pid_t enroot_exec(uid_t uid, gid_t gid, char *const argv[])
 	pid_t pid;
 
 	enroot_reset_log();
+
+	char *argv_str = join_strings(argv);
+	if (argv_str != NULL) {
+		slurm_verbose("pyxis: [verbose] running \"%s\" ...", argv_str);
+		free(argv_str);
+	}
 
 	pid = fork();
 	if (pid < 0) {
@@ -662,10 +691,9 @@ static bool enroot_check_container_exists(const char *name)
 	if (name == NULL || strlen(name) == 0)
 		return (false);
 
-	slurm_debug("pyxis: running \"enroot list\" to check whether a container with name \"%s\" exists", name);
 	ret = enroot_exec_wait(context.job.uid, context.job.gid, (char *const[]){ "enroot", "list", NULL });
 	if (ret < 0) {
-		slurm_error("pyxis: enroot list failed");
+		slurm_error("pyxis: couldn't get list of existing container filesystems");
 		enroot_print_last_log();
 		return (false);
 	}
@@ -804,12 +832,12 @@ static int enroot_container_create(spank_t sp)
 	if (ret < 0 || ret >= sizeof(squashfs_path))
 		goto fail;
 
-	slurm_info("pyxis: running \"enroot import\" ...");
+	slurm_info("pyxis: importing docker image ...");
 
 	ret = enroot_exec_wait(context.job.uid, context.job.gid,
 			       (char *const[]){ "enroot", "import", "--output", squashfs_path, context.args.docker_image, NULL });
 	if (ret < 0) {
-		slurm_error("pyxis: enroot import failed");
+		slurm_error("pyxis: failed to import docker image");
 		enroot_print_last_log();
 		return (-1);
 	}
@@ -822,12 +850,12 @@ static int enroot_container_create(spank_t sp)
 		context.container.name = strdup(context.args.container_name);
 	}
 
-	slurm_info("pyxis: running \"enroot create\" ...");
+	slurm_info("pyxis: creating container filesystem ...");
 
 	ret = enroot_exec_wait(context.job.uid, context.job.gid,
 			       (char *const[]){ "enroot", "create", "--name", context.container.name, squashfs_path, NULL });
 	if (ret < 0) {
-		slurm_error("pyxis: enroot create failed");
+		slurm_error("pyxis: failed to create container filesystem");
 		enroot_print_last_log();
 		goto fail;
 	}
@@ -905,7 +933,7 @@ static int enroot_create_start_config(void)
 	if (dup_fd < 0)
 		goto fail;
 
-	f = fdopen(dup_fd, "a");
+	f = fdopen(dup_fd, "a+");
 	if (f == NULL)
 		goto fail;
 	dup_fd = -1;
@@ -932,6 +960,21 @@ static int enroot_create_start_config(void)
 	if (ret < 0)
 		goto fail;
 
+	/* print contents */
+	if (fseek(f, 0, SEEK_SET) == 0) {
+		char * line;
+		size_t len;
+		slurm_verbose("pyxis: [verbose] enroot start configuration script:");
+		while (getline(&line, &len, f) != -1) {
+			len = strlen(line);
+			if (len > 0) {
+				if (line[len - 1] == '\n')
+					line[len - 1] = '\0'; /* trim trailing newline */
+				slurm_verbose("pyxis:     %s", line);
+			}
+		}
+	}
+
 	rv = fd;
 
 fail:
@@ -953,9 +996,11 @@ static int enroot_container_start(spank_t sp)
 	int status;
 	int rv = -1;
 
+	slurm_info("pyxis: starting container ...");
+
 	conf_fd = enroot_create_start_config();
 	if (conf_fd < 0) {
-		slurm_error("pyxis: could not create enroot config");
+		slurm_error("pyxis: couldn't create enroot start configuration script");
 		goto fail;
 	}
 
@@ -964,8 +1009,6 @@ static int enroot_container_start(spank_t sp)
 		slurm_error("pyxis: could not allocate memory");
 		goto fail;
 	}
-
-	slurm_info("pyxis: running \"enroot start\" ...");
 
 	/*
 	 * The plugin starts the container as a subprocess and acquires handles on the
@@ -981,7 +1024,7 @@ static int enroot_container_start(spank_t sp)
 			  (char *const[]){ "enroot", "start", "--root", "--rw", "--conf", conf_file, context.container.name, "sh", "-c",
 					   "kill -STOP $$ ; exit 0", NULL });
 	if (pid < 0) {
-		slurm_error("pyxis: enroot start failed");
+		slurm_error("pyxis: failed to start container");
 		goto fail;
 	}
 
@@ -1061,8 +1104,6 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		if (ret < 0)
 			goto fail;
 	}
-
-	slurm_debug("pyxis: using container name \"%s\"", context.container.name);
 
 	ret = enroot_container_start(sp);
 	if (ret < 0)
@@ -1293,12 +1334,12 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 	int ret;
 
 	if (context.container.name != NULL && context.args.container_name == NULL) {
-		slurm_info("pyxis: running \"enroot remove\" ...");
+		slurm_info("pyxis: removing container filesystem ...");
 
 		ret = enroot_exec_wait(context.job.uid, context.job.gid,
 				       (char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
 		if (ret < 0) {
-			slurm_info("pyxis: enroot remove %s failed", context.container.name);
+			slurm_info("pyxis: failed to remove container filesystem");
 			enroot_print_last_log();
 		}
 	}
