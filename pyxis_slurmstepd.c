@@ -562,6 +562,9 @@ static char* join_strings(char *const strings[])
 		len += strlen(strings[i]);
 		len += 1;
 	}
+	if (len == 0)
+		return NULL;
+
 	result = malloc(len);
 	if (result == NULL)
 		return NULL;
