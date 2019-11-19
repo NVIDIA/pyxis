@@ -34,6 +34,6 @@ static inline int pyxis_memfd_create(const char *name, unsigned int flags)
 
 char *get_line_from_file(FILE *);
 
-char *join_strings(char *const[], char *const);
+char *join_strings(char *const *, const char *);
 
 #endif /* COMMON_H_ */

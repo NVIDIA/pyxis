@@ -551,10 +551,11 @@ static pid_t enroot_exec(uid_t uid, gid_t gid, char *const argv[])
 	int null_fd = -1;
 	int target_fd = -1;
 	pid_t pid;
+	char *argv_str;
 
 	enroot_reset_log();
 
-	char *argv_str = join_strings(argv, " ");
+	argv_str = join_strings(argv, " ");
 	if (argv_str != NULL) {
 		slurm_verbose("pyxis: running \"%s\" ...", argv_str);
 		free(argv_str);
