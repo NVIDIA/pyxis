@@ -476,9 +476,7 @@ static void enroot_print_last_log(void)
 {
 	int ret;
 	FILE *fp;
-	char *line = NULL;
-	size_t len = 0;
-	ssize_t read;
+	char *line;
 
 	ret = lseek(context.log_fd, 0, SEEK_SET);
 	if (ret < 0) {
@@ -493,17 +491,12 @@ static void enroot_print_last_log(void)
 	}
 	context.log_fd = -1;
 
-	slurm_info("pyxis: printing contents of log file ...");
-	while ((read = getline(&line, &len, fp)) != -1) {
-		len = strlen(line);
-		if (len > 0) {
-			if (line[len - 1] == '\n')
-				line[len - 1] = '\0'; /* trim trailing newline */
-			slurm_error("pyxis:     %s", line);
-		}
+	slurm_error("pyxis: printing contents of log file ...");
+	while ((line = get_line_from_file(fp)) != NULL) {
+		slurm_error("pyxis:     %s", line);
+		free(line);
 	}
 
-	free(line);
 	fclose(fp);
 	return;
 }
@@ -552,32 +545,6 @@ static int enroot_set_env(void)
 	return (0);
 }
 
-static char* join_strings(char *const strings[])
-{
-	int len = 0;
-	int progress = 0;
-	char * result = NULL;
-
-	for (int i=0; strings[i] != NULL; ++i) {
-		len += strlen(strings[i]);
-		len += 1;
-	}
-	if (len == 0)
-		return NULL;
-
-	result = malloc(len);
-	if (result == NULL)
-		return NULL;
-
-	for (int i=0; strings[i] != NULL; ++i) {
-		if (i != 0)
-			result[progress++] = ' ';
-		strcpy(&result[progress], strings[i]);
-		progress += strlen(strings[i]);
-	}
-	return result;
-}
-
 static pid_t enroot_exec(uid_t uid, gid_t gid, char *const argv[])
 {
 	int ret;
@@ -587,9 +554,9 @@ static pid_t enroot_exec(uid_t uid, gid_t gid, char *const argv[])
 
 	enroot_reset_log();
 
-	char *argv_str = join_strings(argv);
+	char *argv_str = join_strings(argv, " ");
 	if (argv_str != NULL) {
-		slurm_verbose("pyxis: [verbose] running \"%s\" ...", argv_str);
+		slurm_verbose("pyxis: running \"%s\" ...", argv_str);
 		free(argv_str);
 	}
 
@@ -686,9 +653,7 @@ static bool enroot_check_container_exists(const char *name)
 {
 	int ret;
 	FILE *fp;
-	char *line = NULL;
-	size_t len = 0;
-	ssize_t read;
+	char *line;
 	bool rc = false;
 
 	if (name == NULL || strlen(name) == 0)
@@ -715,16 +680,13 @@ static bool enroot_check_container_exists(const char *name)
 	}
 	context.log_fd = -1;
 
-	while ((read = getline(&line, &len, fp)) != -1) {
-		len = strlen(line);
-		if (len > 0) {
-			if (line[len - 1] == '\n')
-				line[len - 1] = '\0'; /* trim trailing newline */
-			if (strcmp(line, name) == 0) {
-				rc = true;
-				break;
-			}
+	while ((line = get_line_from_file(fp)) != NULL) {
+		if (strcmp(line, name) == 0) {
+			rc = true;
+			break;
 		}
+		free(line);
+		line = NULL;
 	}
 
 	free(line);
@@ -927,6 +889,7 @@ static int enroot_create_start_config(void)
 	char template[] = "/tmp/.enroot_config_XXXXXX";
 	int ret;
 	int rv = -1;
+	char *line = NULL;
 
 	fd = mkstemp(template);
 	if (fd < 0)
@@ -965,16 +928,10 @@ static int enroot_create_start_config(void)
 
 	/* print contents */
 	if (fseek(f, 0, SEEK_SET) == 0) {
-		char * line;
-		size_t len;
-		slurm_verbose("pyxis: [verbose] enroot start configuration script:");
-		while (getline(&line, &len, f) != -1) {
-			len = strlen(line);
-			if (len > 0) {
-				if (line[len - 1] == '\n')
-					line[len - 1] = '\0'; /* trim trailing newline */
-				slurm_verbose("pyxis:     %s", line);
-			}
+		slurm_verbose("pyxis: enroot start configuration script:");
+		while ((line = get_line_from_file(f)) != NULL) {
+			slurm_verbose("pyxis:     %s", line);
+			free(line);
 		}
 	}
 
