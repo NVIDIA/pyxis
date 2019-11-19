@@ -15,7 +15,7 @@ CPPFLAGS := -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -I/usr/include/slurm -I/usr/includ
 CFLAGS := -std=gnu11 -O2 -g -Wall -Wunused-variable -fstack-protector-strong -fpic $(CFLAGS)
 LDFLAGS := -Wl,-znoexecstack -Wl,-zrelro -Wl,-znow $(LDFLAGS)
 
-C_SRCS := pyxis_slurmstepd.c pyxis_slurmd.c
+C_SRCS := common.c pyxis_slurmstepd.c pyxis_slurmd.c
 C_OBJS := $(C_SRCS:.c=.o)
 
 DEPS := $(C_OBJS:%.o=%.d)
