@@ -25,7 +25,7 @@ char *get_line_from_file(FILE *fp)
 
 char *join_strings(char *const strings[], const char *sep)
 {
-	size_t strings_count, sep_len, result_len = 0;
+	size_t strings_count, result_len = 0;
 	char *result;
 
 	if (strings[0] == NULL)
@@ -34,8 +34,7 @@ char *join_strings(char *const strings[], const char *sep)
 	for (strings_count = 0; strings[strings_count] != NULL; ++strings_count)
 		result_len += strlen(strings[strings_count]);
 
-	sep_len = strlen(sep);
-	result_len += sep_len * (strings_count - 1) + 1;
+	result_len += strlen(sep) * (strings_count - 1) + 1;
 
 	result = malloc(result_len);
 	if (result == NULL)
@@ -44,7 +43,7 @@ char *join_strings(char *const strings[], const char *sep)
 
 	for (size_t i = 0; i < strings_count; ++i) {
 		if (i != 0)
-			strncat(result, sep, sep_len);
+			strcat(result, sep);
 		strcat(result, strings[i]);
 	}
 	return result;
