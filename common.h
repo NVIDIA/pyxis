@@ -2,6 +2,7 @@
 #define COMMON_H_
 
 #include <unistd.h>
+#include <stdio.h>
 #include <sys/syscall.h>
 
 #define PYXIS_RUNTIME_PATH "/run/pyxis"
@@ -30,5 +31,9 @@ static inline int pyxis_memfd_create(const char *name, unsigned int flags)
 {
 	return syscall(__NR_memfd_create, name, flags);
 }
+
+char *get_line_from_file(FILE *fp);
+
+char *join_strings(char *const strings[], const char *sep);
 
 #endif /* COMMON_H_ */
