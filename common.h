@@ -32,8 +32,8 @@ static inline int pyxis_memfd_create(const char *name, unsigned int flags)
 	return syscall(__NR_memfd_create, name, flags);
 }
 
-char *get_line_from_file(FILE *);
+char *get_line_from_file(FILE *fp);
 
-char *join_strings(char *const *, const char *);
+char *join_strings(const char *const strings[], const char *sep);
 
 #endif /* COMMON_H_ */
