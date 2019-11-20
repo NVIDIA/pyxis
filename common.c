@@ -23,7 +23,7 @@ char *get_line_from_file(FILE *fp)
 	return line;
 }
 
-char *join_strings(const char *const strings[], const char *sep)
+char *join_strings(char *const strings[], const char *sep)
 {
 	size_t strings_count, sep_len, result_len = 0;
 	char *result;
