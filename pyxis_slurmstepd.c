@@ -586,23 +586,26 @@ static int enroot_import_job_env(char **env)
 
 static int enroot_set_env(void)
 {
-	int ret;
-
-	ret = enroot_import_job_env(context.job.environ);
-	if (ret < 0)
+	if (enroot_import_job_env(context.job.environ) < 0)
 		return (-1);
 
 	if (context.args.mount_home == 0) {
-		ret = setenv("ENROOT_MOUNT_HOME", "n", 1);
+		if (setenv("ENROOT_MOUNT_HOME", "n", 1) < 0)
+			return (-1);
 	} else if (context.args.mount_home == 1) {
-		ret = setenv("ENROOT_MOUNT_HOME", "y", 1);
+		if (setenv("ENROOT_MOUNT_HOME", "y", 1) < 0)
+			return (-1);
 	} else {
 		/* If mount_home was not set by the user, we rely on the setting specified in the enroot config. */
-		ret = 0;
 	}
 
-	if (ret < 0)
-		return (-1);
+	if (pyxis_remap_root()) {
+		if (setenv("ENROOT_REMAP_ROOT", "y", 1) < 0)
+			return (-1);
+	} else if (context.args.mount_home == 1) {
+		if (setenv("ENROOT_REMAP_ROOT", "n", 1) < 0)
+			return (-1);
+	}
 
 	return (0);
 }
@@ -1043,15 +1046,9 @@ static int enroot_container_start(spank_t sp)
 	 * This requires a shell inside the container, but we could do the same with a
 	 * small static C program bind-mounted inside the container.
 	*/
-	if (pyxis_remap_root()) {
-		pid = enroot_exec(context.job.uid, context.job.gid,
-				  (char *const[]){ "enroot", "start", "--root", "--rw", "--conf", conf_file, context.container.name, "sh", "-c",
-						   "kill -STOP $$ ; exit 0", NULL });
-	} else {
-		pid = enroot_exec(context.job.uid, context.job.gid,
-				  (char *const[]){ "enroot", "start", "--rw", "--conf", conf_file, context.container.name, "sh", "-c",
-						   "kill -STOP $$ ; exit 0", NULL });
-	}
+	pid = enroot_exec(context.job.uid, context.job.gid,
+			  (char *const[]){ "enroot", "start", "--rw", "--conf", conf_file, context.container.name, "sh", "-c",
+					   "kill -STOP $$ ; exit 0", NULL });
 	if (pid < 0) {
 		slurm_error("pyxis: failed to start container");
 		goto fail;
