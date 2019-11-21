@@ -29,6 +29,7 @@
 
 SPANK_PLUGIN(pyxis, 1)
 
+#define PYXIS_REMAP_ROOT_DEFAULT 1
 #define CONTAINER_NAME_FMT "%u.%u"
 #define PYXIS_SQUASHFS_FILE PYXIS_USER_RUNTIME_PATH "/" CONTAINER_NAME_FMT ".squashfs"
 
@@ -54,6 +55,7 @@ struct plugin_args {
 	char *workdir;
 	char *container_name;
 	int mount_home;
+	int remap_root;
 };
 
 struct plugin_context {
@@ -68,7 +70,7 @@ struct plugin_context {
 static struct plugin_context context = {
 	.enabled = false,
 	.log_fd = -1,
-	.args = { .docker_image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1 },
+	.args = { .docker_image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1, .remap_root = -1 },
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL },
 	.container = { .name = NULL, .userns_fd = -1, .mntns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
@@ -87,6 +89,7 @@ static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
 static int spank_option_container_name(int val, const char *optarg, int remote);
 static int spank_option_container_mount_home(int val, const char *optarg, int remote);
+static int spank_option_container_remap_root(int val, const char *optarg, int remote);
 
 struct spank_option spank_opts[] =
 {
@@ -129,6 +132,27 @@ struct spank_option spank_opts[] =
 		NULL,
 		"[pyxis] do not bind mount the user's home directory",
 		0, 0, spank_option_container_mount_home
+	},
+	{
+		"container-remap-root",
+		NULL,
+		"[pyxis] ask to be remapped to root inside the container. "
+		"Does not grant elevated system permissions, despite appearances."
+#if PYXIS_REMAP_ROOT_DEFAULT == 1
+		" (default)"
+#endif
+		,
+		0, 1, spank_option_container_remap_root
+	},
+	{
+		"no-container-remap-root",
+		NULL,
+		"[pyxis] do not remap to root inside the container"
+#if PYXIS_REMAP_ROOT_DEFAULT == 0
+		" (default)"
+#endif
+		,
+		0, 0, spank_option_container_remap_root
 	},
 	SPANK_OPTIONS_TABLE_END
 };
@@ -329,6 +353,23 @@ static int spank_option_container_mount_home(int val, const char *optarg, int re
 	return (0);
 }
 
+static int spank_option_container_remap_root(int val, const char *optarg, int remote)
+{
+	if (context.args.remap_root != -1 && context.args.remap_root != val) {
+		slurm_error("pyxis: both --container-remap-root and --no-container-remap-root were specified");
+		return (-1);
+	}
+
+	context.args.remap_root = val;
+
+	return (0);
+}
+
+static bool pyxis_remap_root()
+{
+	return context.args.remap_root == 1 || (context.args.remap_root == -1 && PYXIS_REMAP_ROOT_DEFAULT == 1);
+}
+
 int slurm_spank_init(spank_t sp, int ac, char **av)
 {
 	spank_err_t rc;
@@ -457,6 +498,10 @@ int slurm_spank_init_post_opt(spank_t sp, int ac, char **av)
 			slurm_error("pyxis: ignoring --container-mounts because neither --container-image nor --container-name is set");
 		if (context.args.workdir != NULL)
 			slurm_error("pyxis: ignoring --container-workdir because neither --container-image nor --container-name is set");
+		if (context.args.mount_home != -1)
+			slurm_error("pyxis: ignoring --[no-]container-mount-home because neither --container-image nor --container-name is set");
+		if (context.args.remap_root != -1)
+			slurm_error("pyxis: ignoring --[no-]container-remap-root because neither --container-image nor --container-name is set");
 		return (0);
 	}
 
@@ -541,23 +586,26 @@ static int enroot_import_job_env(char **env)
 
 static int enroot_set_env(void)
 {
-	int ret;
-
-	ret = enroot_import_job_env(context.job.environ);
-	if (ret < 0)
+	if (enroot_import_job_env(context.job.environ) < 0)
 		return (-1);
 
 	if (context.args.mount_home == 0) {
-		ret = setenv("ENROOT_MOUNT_HOME", "n", 1);
+		if (setenv("ENROOT_MOUNT_HOME", "n", 1) < 0)
+			return (-1);
 	} else if (context.args.mount_home == 1) {
-		ret = setenv("ENROOT_MOUNT_HOME", "y", 1);
+		if (setenv("ENROOT_MOUNT_HOME", "y", 1) < 0)
+			return (-1);
 	} else {
 		/* If mount_home was not set by the user, we rely on the setting specified in the enroot config. */
-		ret = 0;
 	}
 
-	if (ret < 0)
-		return (-1);
+	if (pyxis_remap_root()) {
+		if (setenv("ENROOT_REMAP_ROOT", "y", 1) < 0)
+			return (-1);
+	} else {
+		if (setenv("ENROOT_REMAP_ROOT", "n", 1) < 0)
+			return (-1);
+	}
 
 	return (0);
 }
@@ -999,7 +1047,7 @@ static int enroot_container_start(spank_t sp)
 	 * small static C program bind-mounted inside the container.
 	*/
 	pid = enroot_exec(context.job.uid, context.job.gid,
-			  (char *const[]){ "enroot", "start", "--root", "--rw", "--conf", conf_file, context.container.name, "sh", "-c",
+			  (char *const[]){ "enroot", "start", "--rw", "--conf", conf_file, context.container.name, "sh", "-c",
 					   "kill -STOP $$ ; exit 0", NULL });
 	if (pid < 0) {
 		slurm_error("pyxis: failed to start container");
@@ -1282,23 +1330,25 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		goto fail;
 	}
 
-	/* The user will see themself as (remapped) uid/gid 0 inside the container */
-	ret = setgid(0);
-	if (ret < 0) {
-		slurm_error("pyxis: setgid failed");
-		goto fail;
-	}
+	if (pyxis_remap_root()) {
+		/* The user will see themself as (remapped) uid/gid 0 inside the container */
+		ret = setgid(0);
+		if (ret < 0) {
+			slurm_error("pyxis: setgid failed");
+			goto fail;
+		}
 
-	ret = setuid(0);
-	if (ret < 0) {
-		slurm_error("pyxis: setuid failed");
-		goto fail;
-	}
+		ret = setuid(0);
+		if (ret < 0) {
+			slurm_error("pyxis: setuid failed");
+			goto fail;
+		}
 
-	ret = seccomp_set_filter();
-	if (ret < 0) {
-		slurm_error("pyxis: seccomp filter failed: %s", strerror(errno));
-		goto fail;
+		ret = seccomp_set_filter();
+		if (ret < 0) {
+			slurm_error("pyxis: seccomp filter failed: %s", strerror(errno));
+			goto fail;
+		}
 	}
 
 	rv = 0;
