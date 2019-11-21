@@ -602,7 +602,7 @@ static int enroot_set_env(void)
 	if (pyxis_remap_root()) {
 		if (setenv("ENROOT_REMAP_ROOT", "y", 1) < 0)
 			return (-1);
-	} else if (context.args.mount_home == 1) {
+	} else {
 		if (setenv("ENROOT_REMAP_ROOT", "n", 1) < 0)
 			return (-1);
 	}
