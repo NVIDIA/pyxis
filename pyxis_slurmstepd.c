@@ -69,7 +69,7 @@ static struct plugin_context context = {
 	.enabled = false,
 	.log_fd = -1,
 	.args = { .docker_image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1 },
-	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0 },
+	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL },
 	.container = { .name = NULL, .userns_fd = -1, .mntns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
@@ -365,6 +365,8 @@ int slurm_spank_init(spank_t sp, int ac, char **av)
 static int job_get_info(spank_t sp, struct job_info *job)
 {
 	spank_err_t rc;
+	char **spank_environ = NULL;
+	size_t environ_len = 0;
 	int rv = -1;
 
 	rc = spank_get_item(sp, S_JOB_UID, &job->uid);
@@ -391,10 +393,25 @@ static int job_get_info(spank_t sp, struct job_info *job)
 		goto fail;
 	}
 
-	rc = spank_get_item(sp, S_JOB_ENV, &job->environ);
+	rc = spank_get_item(sp, S_JOB_ENV, &spank_environ);
 	if (rc != ESPANK_SUCCESS) {
 		slurm_error("pyxis: couldn't get job environment: %s", spank_strerror(rc));
 		goto fail;
+	}
+
+	/* We need to make a copy of the environment returned by the SPANK API. */
+	for (size_t i = 0; spank_environ[i] != NULL; ++i)
+		environ_len += 1;
+
+	job->environ = malloc((environ_len + 1) * sizeof(char*));
+	if (job->environ == NULL)
+		goto fail;
+	job->environ[environ_len] = NULL;
+
+	for (size_t i = 0; i < environ_len; ++i) {
+		job->environ[i] = strdup(spank_environ[i]);
+		if (job->environ[i] == NULL)
+			goto fail;
 	}
 
 	rv = 0;
@@ -1312,6 +1329,12 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 	free(context.args.mounts);
 	free(context.args.workdir);
 	free(context.args.container_name);
+
+	if (context.job.environ != NULL) {
+		for (int i = 0; context.job.environ[i] != NULL; ++i)
+			free(context.job.environ[i]);
+		free(context.job.environ);
+	}
 
 	xclose(context.container.userns_fd);
 	xclose(context.container.mntns_fd);
