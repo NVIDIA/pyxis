@@ -53,7 +53,6 @@ $ srun --help
                               containers are not. If a container with this name
                               already exists, the existing container is used and
                               the import is skipped.
-
       --container-mount-home  [pyxis] bind mount the user's home directory.
                               System-level enroot settings might cause this
                               directory to be already-mounted.
@@ -61,30 +60,28 @@ $ srun --help
       --no-container-mount-home
                               [pyxis] do not bind mount the user's home
                               directory
+      --container-remap-root  [pyxis] ask to be remapped to root inside the
+                              container. Does not grant elevated system
+                              permissions, despite appearances. (default)
+
+      --no-container-remap-root
+                              [pyxis] do not remap to root inside the container
 ```
 
 ## Examples
 
 ```console
 $ # Run a command on a worker node
-$ srun grep NAME /etc/os-release
-NAME="Ubuntu"
+$ srun grep PRETTY /etc/os-release
 PRETTY_NAME="Ubuntu 18.04.2 LTS"
-VERSION_CODENAME=bionic
-UBUNTU_CODENAME=bionic
 
 $ # run the same command, but now inside of a container
-$ srun --container-image=centos grep NAME /etc/os-release
-NAME="CentOS Linux"
+$ srun --container-image=centos grep PRETTY /etc/os-release
 PRETTY_NAME="CentOS Linux 7 (Core)"
-CPE_NAME="cpe:/o:centos:centos:7"
 
 $ # mount a file from the host and run the command on it, from inside the container
-$ srun --container-image=centos --container-mounts=/etc/os-release:/host/os-release grep NAME /host/os-release
-NAME="Ubuntu"
+$ srun --container-image=centos --container-mounts=/etc/os-release:/host/os-release grep PRETTY /host/os-release
 PRETTY_NAME="Ubuntu 18.04.2 LTS"
-VERSION_CODENAME=bionic
-UBUNTU_CODENAME=bionic
 ```
 
 ## Copyright and License
