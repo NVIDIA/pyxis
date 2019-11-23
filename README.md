@@ -38,8 +38,11 @@ Pyxis being a SPANK plugin, the new command-line arguments it introduces are dir
 ```
 $ srun --help
 ...
-      --container-image=[USER@][REGISTRY#]IMAGE[:TAG]
-                              [pyxis] docker image to use, as an enroot URI
+      --container-image=[USER@][REGISTRY#]IMAGE[:TAG]|PATH
+                              [pyxis] the image to use for the container
+                              filesystem. Can be either a docker image given as
+                              an enroot URI, or a path to a squashfs file on the
+                              remote host filesystem.
 
       --container-mounts=SRC:DST[:FLAGS][,SRC:DST...]
                               [pyxis] bind mount[s] inside the container. Mount
