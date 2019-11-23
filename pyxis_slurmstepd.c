@@ -49,7 +49,7 @@ struct job_info {
 };
 
 struct plugin_args {
-	char *docker_image;
+	char *image;
 	char **mounts;
 	size_t mounts_len;
 	char *workdir;
@@ -70,7 +70,7 @@ struct plugin_context {
 static struct plugin_context context = {
 	.enabled = false,
 	.log_fd = -1,
-	.args = { .docker_image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1, .remap_root = -1 },
+	.args = { .image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1, .remap_root = -1 },
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL },
 	.container = { .name = NULL, .userns_fd = -1, .mntns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
@@ -84,7 +84,7 @@ static const char *static_mount_entries[] = {
 	NULL
 };
 
-static int spank_option_docker_image(int val, const char *optarg, int remote);
+static int spank_option_image(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
 static int spank_option_container_name(int val, const char *optarg, int remote);
@@ -95,9 +95,10 @@ struct spank_option spank_opts[] =
 {
 	{
 		"container-image",
-		"[USER@][REGISTRY#]IMAGE[:TAG]",
-		"[pyxis] docker image to use, as an enroot URI",
-		1, 0, spank_option_docker_image
+		"[USER@][REGISTRY#]IMAGE[:TAG]|PATH",
+		"[pyxis] the image to use for the container filesystem. Can be either a docker image given as an enroot URI, "
+			"or a path to a squashfs file on the remote host filesystem.",
+		1, 0, spank_option_image
 	},
 	{
 		"container-mounts",
@@ -157,30 +158,23 @@ struct spank_option spank_opts[] =
 	SPANK_OPTIONS_TABLE_END
 };
 
-static int spank_option_docker_image(int val, const char *optarg, int remote)
+static int spank_option_image(int val, const char *optarg, int remote)
 {
-	int ret;
-
 	if (optarg == NULL || *optarg == '\0') {
 		slurm_error("pyxis: --container-image: argument required");
 		return (-1);
 	}
 
 	/* Slurm can call us twice with the same value, check if it's a different value than before. */
-	if (context.args.docker_image != NULL) {
-		if (strcmp(context.args.docker_image + strlen("docker://"), optarg) == 0)
+	if (context.args.image != NULL) {
+		if (strcmp(context.args.image, optarg) == 0)
 			return (0);
 
 		slurm_error("pyxis: --container-image specified multiple times");
 		return (-1);
 	}
 
-	ret = asprintf(&context.args.docker_image, "docker://%s", optarg);
-	if (ret < 0) {
-		context.args.docker_image = NULL;
-		return (-1);
-	}
-
+	context.args.image = strdup(optarg);
 	return (0);
 }
 
@@ -493,7 +487,7 @@ int slurm_spank_init_post_opt(spank_t sp, int ac, char **av)
 {
 	int ret;
 
-	if (context.args.docker_image == NULL && context.args.container_name == NULL) {
+	if (context.args.image == NULL && context.args.container_name == NULL) {
 		if (context.args.mounts_len > 0)
 			slurm_error("pyxis: ignoring --container-mounts because neither --container-image nor --container-name is set");
 		if (context.args.workdir != NULL)
@@ -857,20 +851,34 @@ static int enroot_container_create(spank_t sp)
 {
 	int ret;
 	char squashfs_path[PATH_MAX] = { 0 };
+	char *enroot_uri = NULL;
+	bool should_delete_squashfs = false;
 	int rv = -1;
 
-	ret = snprintf(squashfs_path, sizeof(squashfs_path), PYXIS_SQUASHFS_FILE, context.job.uid, context.job.jobid, context.job.stepid);
-	if (ret < 0 || ret >= sizeof(squashfs_path))
-		goto fail;
+	if (strspn(context.args.image, "./") > 0) {
+		/* Assume `image` is a path to a squashfs file. */
+		strncpy(squashfs_path, context.args.image, PATH_MAX);
+	} else {
+		/* Assume `image` is an enroot URI for a docker image. */
+		ret = asprintf(&enroot_uri, "docker://%s", context.args.image);
+		if (ret < 0)
+			goto fail;
 
-	slurm_info("pyxis: importing docker image ...");
+		ret = snprintf(squashfs_path, sizeof(squashfs_path), PYXIS_SQUASHFS_FILE, context.job.uid, context.job.jobid, context.job.stepid);
+		if (ret < 0 || ret >= sizeof(squashfs_path))
+			goto fail;
 
-	ret = enroot_exec_wait(context.job.uid, context.job.gid,
-			       (char *const[]){ "enroot", "import", "--output", squashfs_path, context.args.docker_image, NULL });
-	if (ret < 0) {
-		slurm_error("pyxis: failed to import docker image");
-		enroot_print_last_log();
-		return (-1);
+		should_delete_squashfs = true;
+
+		slurm_info("pyxis: importing docker image ...");
+
+		ret = enroot_exec_wait(context.job.uid, context.job.gid,
+				       (char *const[]){ "enroot", "import", "--output", squashfs_path, enroot_uri, NULL });
+		if (ret < 0) {
+			slurm_error("pyxis: failed to import docker image");
+			enroot_print_last_log();
+			goto fail;
+		}
 	}
 
 	if (context.args.container_name == NULL) {
@@ -894,7 +902,8 @@ static int enroot_container_create(spank_t sp)
 	rv = 0;
 
 fail:
-	if (*squashfs_path != '\0') {
+	free(enroot_uri);
+	if (should_delete_squashfs && *squashfs_path != '\0') {
 		ret = unlink(squashfs_path);
 		if (ret < 0)
 			slurm_info("pyxis: could not remove squashfs: %s", strerror(errno));
@@ -1116,9 +1125,9 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 
 	if (context.args.container_name != NULL) {
 		if (enroot_check_container_exists(context.args.container_name)) {
-			slurm_info("pyxis: reusing existing container");
+			slurm_info("pyxis: reusing existing container filesystem");
 			context.container.name = strdup(context.args.container_name);
-		} else if (context.args.docker_image == NULL) {
+		} else if (context.args.image == NULL) {
 			slurm_error("pyxis: a container with name \"%s\" does not exist, and --container-image is not set",
 				    context.args.container_name);
 			goto fail;
@@ -1373,7 +1382,7 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 	}
 	free(context.container.name);
 
-	free(context.args.docker_image);
+	free(context.args.image);
 	for (int i = 0; i < context.args.mounts_len; ++i)
 		free(context.args.mounts[i]);
 	free(context.args.mounts);
