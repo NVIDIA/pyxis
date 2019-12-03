@@ -174,6 +174,11 @@ static int spank_option_image(int val, const char *optarg, int remote)
 		return (-1);
 	}
 
+	if (strnlen(optarg, PATH_MAX) >= PATH_MAX) {
+		slurm_error("pyxis: value for --container-image must be fewer than %d characters long", PATH_MAX);
+		return (-1);
+	}
+
 	context.args.image = strdup(optarg);
 	return (0);
 }
