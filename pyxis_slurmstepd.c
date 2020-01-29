@@ -35,6 +35,8 @@ SPANK_PLUGIN(pyxis, 1)
 
 struct container {
 	char *name;
+	bool reuse_rootfs;
+	bool temporary;
 	int userns_fd;
 	int mntns_fd;
 	int cgroupns_fd;
@@ -73,7 +75,7 @@ static struct plugin_context context = {
 	.log_fd = -1,
 	.args = { .image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1, .remap_root = -1 },
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL },
-	.container = { .name = NULL, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
+	.container = { .name = NULL, .reuse_rootfs = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
 
@@ -892,14 +894,6 @@ static int enroot_container_create(void)
 		}
 	}
 
-	if (context.args.container_name == NULL) {
-		ret = asprintf(&context.container.name, CONTAINER_NAME_FMT, context.job.jobid, context.job.stepid);
-		if (ret < 0)
-			goto fail;
-	} else {
-		context.container.name = strdup(context.args.container_name);
-	}
-
 	slurm_info("pyxis: creating container filesystem ...");
 
 	ret = enroot_exec_wait(context.job.uid, context.job.gid,
@@ -1146,15 +1140,21 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	if (context.args.container_name != NULL) {
 		if (enroot_check_container_exists(context.args.container_name)) {
 			slurm_info("pyxis: reusing existing container filesystem");
-			context.container.name = strdup(context.args.container_name);
+			context.container.reuse_rootfs = true;
 		} else if (context.args.image == NULL) {
 			slurm_error("pyxis: a container with name \"%s\" does not exist, and --container-image is not set",
 				    context.args.container_name);
 			goto fail;
 		}
+		context.container.name = strdup(context.args.container_name);
+	} else {
+		ret = asprintf(&context.container.name, CONTAINER_NAME_FMT, context.job.jobid, context.job.stepid);
+		if (ret < 0)
+			goto fail;
+		context.container.temporary = true;
 	}
 
-	if (context.container.name == NULL) {
+	if (!context.container.reuse_rootfs) {
 		ret = enroot_container_create();
 		if (ret < 0)
 			goto fail;
@@ -1399,7 +1399,7 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
 
-	if (context.container.name != NULL && context.args.container_name == NULL) {
+	if (context.container.temporary) {
 		slurm_info("pyxis: removing container filesystem ...");
 
 		ret = enroot_exec_wait(context.job.uid, context.job.gid,
