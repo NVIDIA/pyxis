@@ -1158,7 +1158,8 @@ fail:
 	 *
 	 * See https://bugs.schedmd.com/show_bug.cgi?id=7573 for more details.
 	 */
-	slurm_debug("pyxis: user_init() failed with rc=%d; postponing error for now, will report later", rv);
+	if (rv != 0)
+		slurm_debug("pyxis: user_init() failed with rc=%d; postponing error for now, will report later", rv);
 	context.user_init_rv = rv;
 	return (0);
 }
