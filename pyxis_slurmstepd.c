@@ -180,9 +180,11 @@ static int spank_option_image(int val, const char *optarg, int remote)
 
 static int add_mount_entry(const char *entry)
 {
-	char **p;
+	char *entry_dup = NULL;
+	char **p = NULL;
+	int rv = -1;
 
-	for (int i = 0; i < context.args.mounts_len; ++i) {
+	for (size_t i = 0; i < context.args.mounts_len; ++i) {
 		/* This mount entry already exists, skip it. */
 		if (strcmp(context.args.mounts[i], entry) == 0) {
 			slurm_info("pyxis: skipping duplicate mount entry: %s", entry);
@@ -190,22 +192,26 @@ static int add_mount_entry(const char *entry)
 		}
 	}
 
+	entry_dup = strdup(entry);
+	if (entry_dup == NULL)
+		goto fail;
+
 	p = realloc(context.args.mounts, sizeof(*context.args.mounts) * (context.args.mounts_len + 1));
-	if (p == NULL) {
-		slurm_error("pyxis: could not allocate memory");
-		return (-1);
-	}
-
-	p[context.args.mounts_len] = strdup(entry);
-	if (p[context.args.mounts_len] == NULL) {
-		free(p);
-		return (-1);
-	}
-
+	if (p == NULL)
+		goto fail;
 	context.args.mounts = p;
+	p = NULL;
+
+	context.args.mounts[context.args.mounts_len] = entry_dup;
+	entry_dup = NULL;
 	context.args.mounts_len += 1;
 
-	return (0);
+	rv = 0;
+
+fail:
+	free(entry_dup);
+	free(p);
+	return (rv);
 }
 
 static int add_mount(const char *source, const char *target, const char *flags)
