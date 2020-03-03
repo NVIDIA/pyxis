@@ -1,0 +1,14 @@
+extraction:
+  cpp:
+    prepare:
+      packages:
+        - build-essential
+        - lsb-release
+        - curl
+        - ca-certificates
+        - perl
+    index:
+      build_command:
+        - mkdir slurm
+        - curl -fsSL 'https://raw.githubusercontent.com/SchedMD/slurm/slurm-19-05-5-1/slurm/spank.h' -o slurm/spank.h
+        - CPPFLAGS='-I ./slurm/' make -k
