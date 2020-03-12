@@ -1,3 +1,9 @@
+nvslurm-plugin-pyxis (0.5.0-1) UNRELEASED; urgency=medium
+
+  * Release v0.5.0
+
+ -- NVIDIA CORPORATION <cudatools@nvidia.com>  Thu, 12 Mar 2020 00:15:57 +0000
+
 nvslurm-plugin-pyxis (0.4.0-1) UNRELEASED; urgency=medium
 
   * Release v0.4.0
