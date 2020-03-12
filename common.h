@@ -27,6 +27,10 @@ static inline void xclose(int fd)
 # endif /* !defined(__NR_memfd_create) */
 #endif /* defined(__x86_64__) */
 
+#ifndef CLONE_NEWCGROUP
+# define CLONE_NEWCGROUP 0x02000000
+#endif
+
 static inline int pyxis_memfd_create(const char *name, unsigned int flags)
 {
 	return syscall(__NR_memfd_create, name, flags);

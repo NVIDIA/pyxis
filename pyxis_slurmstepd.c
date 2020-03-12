@@ -37,6 +37,7 @@ struct container {
 	char *name;
 	int userns_fd;
 	int mntns_fd;
+	int cgroupns_fd;
 	int cwd_fd;
 };
 
@@ -72,7 +73,7 @@ static struct plugin_context context = {
 	.log_fd = -1,
 	.args = { .image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1, .remap_root = -1 },
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL },
-	.container = { .name = NULL, .userns_fd = -1, .mntns_fd = -1, .cwd_fd = -1 },
+	.container = { .name = NULL, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
 
@@ -925,36 +926,45 @@ fail:
 static int container_get_fds(pid_t pid, struct container *container)
 {
 	int ret;
-	char userns_path[PATH_MAX];
-	char mntns_path[PATH_MAX];
-	char cwd_path[PATH_MAX];
+	char path[PATH_MAX];
 	int rv = -1;
 
-	ret = snprintf(userns_path, sizeof(userns_path), "/proc/%d/ns/user", pid);
-	if (ret < 0 || ret >= sizeof(userns_path))
+	ret = snprintf(path, sizeof(path), "/proc/%d/ns/user", pid);
+	if (ret < 0 || ret >= sizeof(path))
 		goto fail;
 
-	container->userns_fd = open(userns_path, O_RDONLY | O_CLOEXEC);
+	container->userns_fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (container->userns_fd < 0) {
 		slurm_error("pyxis: unable to open user namespace file: %s", strerror(errno));
 		goto fail;
 	}
 
-	ret = snprintf(mntns_path, sizeof(mntns_path), "/proc/%d/ns/mnt", pid);
-	if (ret < 0 || ret >= sizeof(mntns_path))
+	ret = snprintf(path, sizeof(path), "/proc/%d/ns/mnt", pid);
+	if (ret < 0 || ret >= sizeof(path))
 		goto fail;
 
-	container->mntns_fd = open(mntns_path, O_RDONLY | O_CLOEXEC);
+	container->mntns_fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (container->mntns_fd < 0) {
 		slurm_error("pyxis: unable to open mount namespace file: %s", strerror(errno));
 		goto fail;
 	}
 
-	ret = snprintf(cwd_path, sizeof(cwd_path), "/proc/%d/cwd", pid);
-	if (ret < 0 || ret >= sizeof(cwd_path))
+	ret = snprintf(path, sizeof(path), "/proc/%d/ns/cgroup", pid);
+	if (ret < 0 || ret >= sizeof(path))
 		goto fail;
 
-	container->cwd_fd = open(cwd_path, O_RDONLY | O_CLOEXEC);
+	container->cgroupns_fd = open(path, O_RDONLY | O_CLOEXEC);
+	/* Skip cgroup namespace if not supported */
+	if (container->cgroupns_fd < 0 && errno != ENOENT) {
+		slurm_error("pyxis: unable to open cgroup namespace file: %s", strerror(errno));
+		goto fail;
+	}
+
+	ret = snprintf(path, sizeof(path), "/proc/%d/cwd", pid);
+	if (ret < 0 || ret >= sizeof(path))
+		goto fail;
+
+	container->cwd_fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (container->cwd_fd < 0) {
 		slurm_error("pyxis: couldn't open cwd fd");
 		goto fail;
@@ -1350,6 +1360,14 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		goto fail;
 	}
 
+	if (context.container.cgroupns_fd >= 0) {
+		ret = setns(context.container.cgroupns_fd, CLONE_NEWCGROUP);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't join cgroup namespace: %s", strerror(errno));
+			goto fail;
+		}
+	}
+
 	if (pyxis_remap_root()) {
 		/* The user will see themself as (remapped) uid/gid 0 inside the container */
 		ret = setgid(0);
@@ -1408,6 +1426,7 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 
 	xclose(context.container.userns_fd);
 	xclose(context.container.mntns_fd);
+	xclose(context.container.cgroupns_fd);
 	xclose(context.container.cwd_fd);
 	xclose(context.log_fd);
 
