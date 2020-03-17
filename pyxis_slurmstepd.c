@@ -854,7 +854,7 @@ fail:
 	return (rv);
 }
 
-static int enroot_container_create(spank_t sp)
+static int enroot_container_create(void)
 {
 	int ret;
 	char squashfs_path[PATH_MAX];
@@ -1155,7 +1155,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	}
 
 	if (context.container.name == NULL) {
-		ret = enroot_container_create(sp);
+		ret = enroot_container_create();
 		if (ret < 0)
 			goto fail;
 	}
