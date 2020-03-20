@@ -10,7 +10,6 @@ function teardown() {
     enroot remove -f pyxis-exec-test || true
 }
 
-
 @test "enroot exec" {
     run_srun --container-image=ubuntu:18.04 --container-name=pyxis-exec-test true
     run_srun --container-name=pyxis-exec-test sleep 30s &
@@ -20,4 +19,12 @@ function teardown() {
     logf "pid: %s" "${pid}"
     [ "${pid}" -gt "1" ]
     run_enroot exec "${pid}" true
+}
+
+@test "attach to running container" {
+    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-exec-test mkdir /mymnt
+    run_srun --container-name=pyxis-exec-test bash -c "mount -t tmpfs none /mymnt && sleep 30s" &
+
+    sleep 5s # FIXME...
+    run_srun --container-name=pyxis-exec-test findmnt /mymnt
 }

@@ -36,7 +36,9 @@ SPANK_PLUGIN(pyxis, 1)
 struct container {
 	char *name;
 	bool reuse_rootfs;
+	bool reuse_pid;
 	bool temporary;
+	pid_t pid;
 	int userns_fd;
 	int mntns_fd;
 	int cgroupns_fd;
@@ -75,7 +77,7 @@ static struct plugin_context context = {
 	.log_fd = -1,
 	.args = { .image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1, .remap_root = -1 },
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL },
-	.container = { .name = NULL, .reuse_rootfs = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
+	.container = { .name = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .pid = -1, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
 
@@ -717,49 +719,85 @@ static int enroot_exec_wait(uid_t uid, gid_t gid, char *const argv[])
 	return (0);
 }
 
-static bool enroot_check_container_exists(const char *name)
+/*
+ * Returns -1 if an error occurs.
+ * Returns 0 and set *pid==-1 if container doesn't exist.
+ * Returns 0 and set *pid==0 if container exists but is not running.
+ * Returns 0 and set *pid>0 (the container PID) if the container exists and is running.
+ */
+static int enroot_container_get(const char *name, pid_t *pid)
 {
 	int ret;
 	FILE *fp;
 	char *line;
-	bool rc = false;
+	char *ctr_name, *ctr_pid, *saveptr;
+	unsigned long n;
+	int rv = -1;
 
-	if (name == NULL || strlen(name) == 0)
-		return (false);
+	if (name == NULL || strlen(name) == 0 || pid == NULL)
+		return (-1);
 
-	ret = enroot_exec_wait(context.job.uid, context.job.gid, (char *const[]){ "enroot", "list", NULL });
+	*pid = -1;
+
+	ret = enroot_exec_wait(context.job.uid, context.job.gid, (char *const[]){ "enroot", "list", "-f", NULL });
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't get list of existing container filesystems");
 		enroot_print_last_log();
-		return (false);
+		return (-1);
 	}
 
 	/* Typically, the log is used to show stderr from failed commands. But here we parse the output. */
 	ret = lseek(context.log_fd, 0, SEEK_SET);
 	if (ret < 0) {
 		slurm_info("pyxis: couldn't rewind log file: %s", strerror(errno));
-		return (false);
+		return (-1);
 	}
 
 	fp = fdopen(context.log_fd, "r");
 	if (fp == NULL) {
 		slurm_info("pyxis: couldn't open in-memory log for printing: %s", strerror(errno));
-		return (false);
+		return (-1);
 	}
 	context.log_fd = -1;
 
+	/* Skip headers line */
+	line = get_line_from_file(fp);
+	if (line == NULL) {
+		slurm_error("pyxis: \"enroot list -f\" did not produce any usable output");
+		goto fail;
+	}
+
 	while ((line = get_line_from_file(fp)) != NULL) {
-		if (strcmp(line, name) == 0) {
-			rc = true;
+		ctr_name = strtok_r(line, " ", &saveptr);
+		if (ctr_name == NULL || *ctr_name == '\0')
+			goto fail;
+
+		if (strcmp(name, ctr_name) == 0) {
+			ctr_pid = strtok_r(NULL, " ", &saveptr);
+			if (ctr_pid == NULL || *ctr_pid == '\0') {
+				*pid = 0;
+			} else {
+				errno = 0;
+				n = strtoul(ctr_pid, NULL, 10);
+				if (errno != 0 || n != (pid_t)n)
+					goto fail;
+
+				*pid = (pid_t)n;
+			}
+
 			break;
 		}
+
 		free(line);
 		line = NULL;
 	}
 
+	rv = 0;
+
+fail:
 	free(line);
 	fclose(fp);
-	return (rc);
+	return (rv);
 }
 
 static int read_proc_environ(pid_t pid, char **result, size_t *size)
@@ -1133,7 +1171,18 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		return (0);
 
 	if (context.args.container_name != NULL) {
-		if (enroot_check_container_exists(context.args.container_name)) {
+		ret = enroot_container_get(context.args.container_name, &pid);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't get list of containers");
+			goto fail;
+		}
+
+		if (pid > 0) {
+			slurm_info("pyxis: reusing existing container PID");
+			context.container.pid = pid;
+			context.container.reuse_pid = true;
+			context.container.reuse_rootfs = true;
+		} else if (pid == 0) {
 			slurm_info("pyxis: reusing existing container filesystem");
 			context.container.reuse_rootfs = true;
 		} else if (context.args.image == NULL) {
@@ -1155,25 +1204,31 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			goto fail;
 	}
 
-	pid = enroot_container_start();
-	if (pid < 0)
-		goto fail;
+	if (!context.container.reuse_pid) {
+		pid = enroot_container_start();
+		if (pid < 0)
+			goto fail;
+		context.container.pid = pid;
+	}
 
-	ret = container_get_fds(pid, &context.container);
+	ret = container_get_fds(context.container.pid, &context.container);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't get container attributes");
 		goto fail;
 	}
 
-	ret = spank_import_container_env(sp, pid);
+	ret = spank_import_container_env(sp, context.container.pid);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't read container environment");
 		goto fail;
 	}
 
-	ret = enroot_container_stop(pid);
-	if (ret < 0)
-		goto fail;
+	if (!context.container.reuse_pid) {
+		ret = enroot_container_stop(context.container.pid);
+		if (ret < 0)
+			goto fail;
+		context.container.pid = -1;
+	}
 
 	rv = 0;
 
