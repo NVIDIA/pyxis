@@ -80,8 +80,6 @@ static struct plugin_context context = {
 };
 
 static const char *static_mount_entries[] = {
-	"none /tmp x-detach,nofail,silent",
-	"/tmp /tmp x-create=dir,rw,bind,nosuid,nodev",
 	/* PMIX_SERVER_TMPDIR is the only PMIX variable set in the SPANK environment when calling enroot */
 	"${PMIX_SERVER_TMPDIR:-/dev/null} ${PMIX_SERVER_TMPDIR:-/dev/null} x-create=dir,rw,bind,nofail,silent",
 	NULL
