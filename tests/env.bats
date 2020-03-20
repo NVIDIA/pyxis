@@ -47,6 +47,5 @@ load ./common
 	skip "no NVIDIA GPUs"
     fi
 
-    skip "this use case does not work yet"
     NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=utility,compute run_srun --container-image=ubuntu bash -c 'ldconfig -p | grep libcuda.so.1'
 }

@@ -570,6 +570,7 @@ static const char *enroot_want_env[] = {
 	"HOME=",
 	"TERM=",
 	"NVIDIA_VISIBLE_DEVICES=",
+	"NVIDIA_DRIVER_CAPABILITIES=",
 	"MELLANOX_VISIBLE_DEVICES=",
 	"ENROOT_CONFIG_PATH=",
 	"SLURM_",
