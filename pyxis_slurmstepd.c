@@ -1035,14 +1035,14 @@ fail:
 	return (rv);
 }
 
-static int enroot_container_start(spank_t sp)
+static pid_t enroot_container_start(void)
 {
 	int ret;
 	int conf_fd = -1;
 	char *conf_file = NULL;
 	pid_t pid = -1;
 	int status;
-	int rv = -1;
+	pid_t rv = -1;
 
 	slurm_info("pyxis: starting container ...");
 
@@ -1093,34 +1093,10 @@ static int enroot_container_start(spank_t sp)
 		goto fail;
 	}
 
-	ret = container_get_fds(pid, &context.container);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't get container attributes");
-		goto fail;
-	}
-
-	ret = spank_import_container_env(sp, pid);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't read container environment");
-		goto fail;
-	}
-
-	ret = kill(pid, SIGCONT);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't send SIGCONT to container process: %s", strerror(errno));
-		goto fail;
-	}
-
-	ret = child_wait(pid);
-	if (ret < 0) {
-		slurm_error("pyxis: container process terminated");
-		goto fail;
-	}
-
-	rv = 0;
+	rv = pid;
 
 fail:
-	if (rv < 0)
+	if (rv == -1)
 		enroot_print_last_log();
 	free(conf_file);
 	xclose(conf_fd);
@@ -1128,9 +1104,29 @@ fail:
 	return (rv);
 }
 
+static int enroot_container_stop(pid_t pid)
+{
+	int ret;
+
+	ret = kill(pid, SIGCONT);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't send SIGCONT to container process: %s", strerror(errno));
+		return (-1);
+	}
+
+	ret = child_wait(pid);
+	if (ret < 0) {
+		slurm_error("pyxis: container process terminated");
+		return (-1);
+	}
+
+	return (0);
+}
+
 int slurm_spank_user_init(spank_t sp, int ac, char **av)
 {
 	int ret;
+	pid_t pid;
 	int rv = -1;
 
 	if (!context.enabled)
@@ -1159,7 +1155,23 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			goto fail;
 	}
 
-	ret = enroot_container_start(sp);
+	pid = enroot_container_start();
+	if (pid < 0)
+		goto fail;
+
+	ret = container_get_fds(pid, &context.container);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't get container attributes");
+		goto fail;
+	}
+
+	ret = spank_import_container_env(sp, pid);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't read container environment");
+		goto fail;
+	}
+
+	ret = enroot_container_stop(pid);
 	if (ret < 0)
 		goto fail;
 
