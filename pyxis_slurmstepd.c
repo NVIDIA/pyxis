@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <ftw.h>
 #include <paths.h>
+#include <pthread.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -39,7 +40,6 @@ struct container {
 	bool reuse_rootfs;
 	bool reuse_pid;
 	bool temporary;
-	pid_t pid;
 	int userns_fd;
 	int mntns_fd;
 	int cgroupns_fd;
@@ -51,6 +51,7 @@ struct job_info {
 	gid_t gid;
 	uint32_t jobid;
 	uint32_t stepid;
+	uint32_t local_task_count;
 	char **environ;
 	char cwd[PATH_MAX];
 };
@@ -66,6 +67,13 @@ struct plugin_args {
 	int remap_root;
 };
 
+struct shared_memory {
+	pthread_mutex_t mutex;
+	uint32_t init_tasks;
+	uint32_t started_tasks;
+	pid_t pid;
+};
+
 struct plugin_context {
 	bool enabled;
 	int log_fd;
@@ -73,6 +81,7 @@ struct plugin_context {
 	struct job_info job;
 	struct container container;
 	int user_init_rv;
+	struct shared_memory *shm;
 };
 
 static struct plugin_context context = {
@@ -80,7 +89,7 @@ static struct plugin_context context = {
 	.log_fd = -1,
 	.args = { .image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .container_save = NULL, .mount_home = -1, .remap_root = -1 },
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL, .cwd = { 0 } },
-	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .pid = -1, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
+	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
 
@@ -490,6 +499,12 @@ static int job_get_info(spank_t sp, struct job_info *job)
 	rc = spank_get_item(sp, S_JOB_STEPID, &job->stepid);
 	if (rc != ESPANK_SUCCESS) {
 		slurm_error("pyxis: couldn't get job step ID: %s", spank_strerror(rc));
+		goto fail;
+	}
+
+	rc = spank_get_item(sp, S_JOB_LOCAL_TASK_COUNT, &job->local_task_count);
+	if (rc != ESPANK_SUCCESS) {
+		slurm_error("pyxis: couldn't get job local task count: %s", spank_strerror(rc));
 		goto fail;
 	}
 
@@ -1208,17 +1223,68 @@ static int enroot_container_stop(pid_t pid)
 {
 	int ret;
 
+	if (pid <= 0)
+		return (-1);
+
 	ret = kill(pid, SIGCONT);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't send SIGCONT to container process: %s", strerror(errno));
 		return (-1);
 	}
 
-	ret = child_wait(pid);
-	if (ret < 0) {
-		slurm_error("pyxis: container process terminated");
-		return (-1);
+	return (0);
+}
+
+static struct shared_memory *shm_init(void)
+{
+	struct shared_memory *shm = NULL;
+	pthread_mutexattr_t mutex_attr;
+	int ret;
+
+	shm = mmap(0, sizeof(*shm), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (shm == MAP_FAILED) {
+		shm = NULL;
+		goto fail;
 	}
+
+	ret = pthread_mutexattr_init(&mutex_attr);
+	if (ret < 0)
+		goto fail;
+
+	ret = pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
+	if (ret < 0)
+		goto fail;
+
+	ret = pthread_mutex_init(&shm->mutex, &mutex_attr);
+	if (ret < 0)
+		goto fail;
+
+	shm->init_tasks = 0;
+	shm->started_tasks = 0;
+	shm->pid = -1;
+
+	return shm;
+
+fail:
+	if (shm != NULL)
+		munmap(shm, sizeof(*shm));
+	return (NULL);
+}
+
+static int shm_destroy(struct shared_memory *shm)
+{
+	int ret;
+
+	if (shm == NULL)
+		return (0);
+
+	ret = pthread_mutex_destroy(&shm->mutex);
+	if (ret < 0)
+		return (-1);
+
+	ret = munmap(shm, sizeof(*shm));
+	if (ret < 0)
+		return (-1);
 
 	return (0);
 }
@@ -1232,6 +1298,10 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	if (!context.enabled)
 		return (0);
 
+	context.shm = shm_init();
+	if (context.shm == NULL)
+		goto fail;
+
 	if (context.args.container_name != NULL) {
 		ret = enroot_container_get(context.args.container_name, &pid);
 		if (ret < 0) {
@@ -1241,7 +1311,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 
 		if (pid > 0) {
 			slurm_info("pyxis: reusing existing container PID");
-			context.container.pid = pid;
+			context.shm->pid = pid;
 			context.container.reuse_pid = true;
 			context.container.reuse_rootfs = true;
 		} else if (pid == 0) {
@@ -1262,38 +1332,6 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 
 	if (context.args.container_save != NULL)
 		context.container.save_path = strdup(context.args.container_save);
-
-	if (!context.container.reuse_rootfs) {
-		ret = enroot_container_create();
-		if (ret < 0)
-			goto fail;
-	}
-
-	if (!context.container.reuse_pid) {
-		pid = enroot_container_start();
-		if (pid < 0)
-			goto fail;
-		context.container.pid = pid;
-	}
-
-	ret = container_get_fds(context.container.pid, &context.container);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't get container attributes");
-		goto fail;
-	}
-
-	ret = spank_import_container_env(sp, context.container.pid);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't read container environment");
-		goto fail;
-	}
-
-	if (!context.container.reuse_pid) {
-		ret = enroot_container_stop(context.container.pid);
-		if (ret < 0)
-			goto fail;
-		context.container.pid = -1;
-	}
 
 	rv = 0;
 
@@ -1398,8 +1436,8 @@ static struct {
  * Here, we remap a few variables so that Pytorch multi-process and multi-node works well with
  * pyxis, even though PyTorch does not use MPI.
  *
- * Some other variables are handled with an enroot hook, but these are not available yet in
- * slurm_spank_user_init(), and must be remapped later, when initializing specific tasks.
+ * Some other variables are handled with an enroot hook, but these must be
+ * initialized for each task, not once per node like the container create.
  */
 static int pytorch_setup(spank_t sp)
 {
@@ -1416,6 +1454,66 @@ static int pytorch_setup(spank_t sp)
 	return (0);
 }
 
+static int enroot_start_once(struct container *container, struct shared_memory *shm)
+{
+	int ret;
+	int rv = -1;
+
+	pthread_mutex_lock(&shm->mutex);
+
+	shm->init_tasks += 1;
+
+	/* The first task will create and/or start the enroot container */
+	if (shm->init_tasks == 1) {
+		if (!container->reuse_pid) {
+			if (!container->reuse_rootfs) {
+				ret = enroot_container_create();
+				if (ret < 0)
+					goto fail;
+			}
+
+			shm->pid = enroot_container_start();
+		}
+	}
+
+	if (shm->pid < 0)
+		goto fail;
+
+	rv = 0;
+
+fail:
+	pthread_mutex_unlock(&shm->mutex);
+
+	return (rv);
+}
+
+static int enroot_stop_once(struct container *container, struct shared_memory *shm)
+{
+	int ret;
+	int rv = -1;
+
+	pthread_mutex_lock(&shm->mutex);
+
+	shm->started_tasks += 1;
+
+	/* Last task to start can stop the container process. */
+	if (context.shm->started_tasks == context.job.local_task_count) {
+		if (!container->reuse_pid) {
+			ret = enroot_container_stop(shm->pid);
+			if (ret < 0)
+				goto fail;
+		}
+		shm->pid = -1;
+	}
+
+	rv = 0;
+
+fail:
+	pthread_mutex_unlock(&shm->mutex);
+
+	return (rv);
+}
+
 int slurm_spank_task_init(spank_t sp, int ac, char **av)
 {
 	int ret;
@@ -1426,6 +1524,24 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 
 	if (context.user_init_rv != 0)
 		return (context.user_init_rv);
+
+	ret = enroot_start_once(&context.container, context.shm);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't start container");
+		goto fail;
+	}
+
+	ret = container_get_fds(context.shm->pid, &context.container);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't get container attributes");
+		goto fail;
+	}
+
+	ret = spank_import_container_env(sp, context.shm->pid);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't read container environment");
+		goto fail;
+	}
 
 	if (pmix_enabled(sp)) {
 		ret = pmix_setup(sp);
@@ -1494,6 +1610,10 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 			goto fail;
 		}
 	}
+
+	ret = enroot_stop_once(&context.container, context.shm);
+	if (ret < 0)
+		goto fail;
 
 	rv = 0;
 
@@ -1577,6 +1697,10 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 	xclose(context.container.cgroupns_fd);
 	xclose(context.container.cwd_fd);
 	xclose(context.log_fd);
+
+	ret = shm_destroy(context.shm);
+	if (ret < 0)
+		slurm_info("couldn't destroy shared memory: %s", strerror(errno));
 
 	memset(&context, 0, sizeof(context));
 

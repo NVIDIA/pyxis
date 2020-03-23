@@ -32,3 +32,10 @@ load ./common
     run_srun --container-image=registry.gitlab.com#nvidia/kubernetes/device-plugin/k8s-device-plugin:1.0.0-beta4 md5sum /usr/bin/nvidia-device-plugin
     [ "${lines[-1]}" == "7d9c8e3e005c4bd2161def017f10f719  /usr/bin/nvidia-device-plugin" ]
 }
+
+@test "image download must be attempted once" {
+    run_srun_unchecked --ntasks=2 --container-image=thisimagedoesntexist true
+    [ "${status}" -ne 0 ]
+    attempts=$(grep -c 'importing docker image' <<< "${output}")
+    [ "${attempts}" -eq 1 ]
+}
