@@ -1300,7 +1300,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 fail:
 	/*
 	 * Errors from user_init() are not propagated back to srun. Rather than fail here and have srun
-	 * report rc=0 (success), we return 0 here and throw the error in task_init_privileged()
+	 * report rc=0 (success), we return 0 here and throw the error in task_init()
 	 * instead, which will properly propagate the error back to srun.
 	 *
 	 * See https://bugs.schedmd.com/show_bug.cgi?id=7573 for more details.
@@ -1416,55 +1416,6 @@ static int pytorch_setup(spank_t sp)
 	return (0);
 }
 
-/*
- * We used to join the mount namespace in slurm_spank_task_init(), but had to move it to
- * slurm_spank_task_init_privileged() to overcome a limitation of the SPANK API.
- *
- * Slurm currently uses execve(2) instead of execvpe(2), hence it needs to
- * resolve the full path of the binary to execute. This resolution is done just
- * before the call to the slurm_spank_task_init callback, so it is done against
- * the host filesystem. For Slurm 18.08.7, see function exec_task() in
- * src/slurmd/slurmstepd/task.c, the path resolution function is _build_path()
- *
- * The workaround is to join the mount namespace before the call to
- * _build_path(), and in terms of SPANK API calls, that is slurm_spank_task_init_privileged().
- *
- * See https://bugs.schedmd.com/show_bug.cgi?id=7257
- */
-int slurm_spank_task_init_privileged(spank_t sp, int ac, char **av)
-{
-	int ret;
-
-	if (!context.enabled)
-		return (0);
-
-	if (context.user_init_rv != 0)
-		return (context.user_init_rv);
-
-	ret = setns(context.container.mntns_fd, CLONE_NEWNS);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't join mount namespace: %s", strerror(errno));
-		return (-1);
-	}
-
-	/* No need to chdir(root) + chroot(".") since enroot does a pivot_root. */
-	if (context.args.workdir != NULL) {
-		ret = chdir(context.args.workdir);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't chdir to %s: %s", context.args.workdir, strerror(errno));
-			return (-1);
-		}
-	} else {
-		ret = fchdir(context.container.cwd_fd);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't chdir to container cwd: %s", strerror(errno));
-			return (-1);
-		}
-	}
-
-	return (0);
-}
-
 int slurm_spank_task_init(spank_t sp, int ac, char **av)
 {
 	int ret;
@@ -1472,6 +1423,9 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 
 	if (!context.enabled)
 		return (0);
+
+	if (context.user_init_rv != 0)
+		return (context.user_init_rv);
 
 	if (pmix_enabled(sp)) {
 		ret = pmix_setup(sp);
@@ -1496,6 +1450,27 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		if (ret < 0) {
 			slurm_error("pyxis: couldn't join cgroup namespace: %s", strerror(errno));
 			goto fail;
+		}
+	}
+
+	ret = setns(context.container.mntns_fd, CLONE_NEWNS);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't join mount namespace: %s", strerror(errno));
+		return (-1);
+	}
+
+	/* No need to chdir(root) + chroot(".") since enroot does a pivot_root. */
+	if (context.args.workdir != NULL) {
+		ret = chdir(context.args.workdir);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't chdir to %s: %s", context.args.workdir, strerror(errno));
+			return (-1);
+		}
+	} else {
+		ret = fchdir(context.container.cwd_fd);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't chdir to container cwd: %s", strerror(errno));
+			return (-1);
 		}
 	}
 
