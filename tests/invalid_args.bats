@@ -38,8 +38,8 @@ load ./common
     [ "${status}" -ne 0 ]
 }
 
-@test "invalid arg: --container-mounts=/tmp" {
-    run_srun_unchecked --container-mounts=/tmp --container-image=ubuntu:18.04 true
+@test "invalid arg: --container-mounts=:" {
+    run_srun_unchecked --container-mounts=: --container-image=ubuntu:18.04 true
     [ "${status}" -ne 0 ]
 }
 

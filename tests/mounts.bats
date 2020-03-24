@@ -39,8 +39,22 @@ load ./common
     grep -q 'Read-only file system' <<< "${output}"
 }
 
+@test "--container-mounts multiple flags: unbindable+ro" {
+    run_srun_unchecked --container-mounts=/tmp:/mnt:unbindable+ro --container-image=ubuntu:18.04 touch /mnt/foo
+    [ "${status}" -ne 0 ]
+    grep -q 'Read-only file system' <<< "${output}"
+
+    run_srun --container-mounts=/tmp:/mnt:unbindable+ro --container-image=ubuntu:18.04 findmnt -o PROPAGATION /mnt
+    grep -q 'unbindable' <<< "${lines[-1]}"
+}
+
 @test "--container-mounts path escape attempt" {
     run_srun_unchecked --container-mounts=/home:../home  --container-image=ubuntu:18.04 true
     [ "${status}" -ne 0 ]
     grep -q 'Cross-device link' <<< "${output}"
+}
+
+@test "--container-mounts short-form" {
+    run_srun --container-image=ubuntu:18.04 bash -c '! findmnt /var/lib'
+    run_srun --container-mounts=/var/lib --container-image=ubuntu:18.04 findmnt /var/lib
 }

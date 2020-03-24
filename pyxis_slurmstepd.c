@@ -244,11 +244,64 @@ fail:
 	return (rv);
 }
 
+static int parse_mount_option(const char *option)
+{
+	int ret;
+	char *option_dup = NULL;
+	char *remainder, *src, *dst, *flags = NULL;
+	int rv = -1;
+
+	if (option == NULL)
+		return (-1);
+	option_dup = strdup(option);
+	remainder = option_dup;
+
+	src = strsep(&remainder, ":");
+	if (src == NULL || *src == '\0') {
+		slurm_error("pyxis: --container-mounts: invalid format: %s", option);
+		goto fail;
+	}
+	dst = src;
+
+	if (remainder == NULL)
+		goto done;
+
+	dst = strsep(&remainder, ":");
+	if (dst == NULL || *dst == '\0') {
+		slurm_error("pyxis: --container-mounts: invalid format: %s", option);
+		goto fail;
+	}
+
+	if (remainder == NULL || remainder[0] == '\0')
+		goto done;
+	flags = remainder;
+	/*
+	 * enroot uses "," as the separator for mount flags, but we already use this character for
+	 * separating mount entries, so we use "+" for mount flags and convert to "," here.
+	 */
+	for (int i = 0; flags[i]; ++i)
+		if (flags[i] == '+')
+			flags[i] = ',';
+
+done:
+	ret = add_mount(src, dst, flags);
+	if (ret < 0) {
+		slurm_error("pyxis: could not add mount entry: %s:%s", src, dst);
+		goto fail;
+	}
+
+	rv = 0;
+
+fail:
+	free(option_dup);
+	return (rv);
+}
+
 static int spank_option_mount(int val, const char *optarg, int remote)
 {
 	int ret;
 	char *optarg_dup = NULL;
-	char *args, *arg, *remainder, *src, *dst, *flags;
+	char *args, *arg;
 	int rv = -1;
 
 	if (optarg == NULL || *optarg == '\0') {
@@ -264,36 +317,9 @@ static int spank_option_mount(int val, const char *optarg, int remote)
 
 	args = optarg_dup;
 	while ((arg = strsep(&args, ",")) != NULL) {
-		remainder = arg;
-		src = strsep(&remainder, ":");
-		if (src == NULL || *src == '\0') {
-			slurm_error("pyxis: --container-mounts: invalid format %s", optarg);
+		ret = parse_mount_option(arg);
+		if (ret < 0)
 			goto fail;
-		}
-
-		dst = strsep(&remainder, ":");
-		if (dst == NULL || *dst == '\0') {
-			slurm_error("pyxis: --container-mounts: invalid format %s", optarg);
-			goto fail;
-		}
-
-		flags = NULL;
-		if (remainder != NULL && *remainder != '\0') {
-			flags = remainder;
-			/*
-			 * enroot uses "," as the separator for mount flags, but we already use this character for
-			 * separating mount entries, so we use "+" for mount flags and convert to "," here.
-			 */
-			for (int i = 0; flags[i]; ++i)
-				if (flags[i] == '+')
-					flags[i] = ',';
-		}
-
-		ret = add_mount(src, dst, flags);
-		if (ret < 0) {
-			slurm_error("pyxis: could not add mount entry: %s:%s", src, dst);
-			goto fail;
-		}
 	}
 
 	rv = 0;
