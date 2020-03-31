@@ -60,6 +60,11 @@ static struct sock_filter filter[] = {
 
 static inline int seccomp_set_filter(void)
 {
-	return syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_SPEC_ALLOW,
-		       &(const struct sock_fprog){ ARRAY_SIZE(filter), filter });
+	if ((int)syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_SPEC_ALLOW, &(const struct sock_fprog){ARRAY_SIZE(filter), filter}) == 0)
+		return (0);
+	else if (errno != EINVAL)
+		return (-1);
+
+	return syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, 0,
+		       &(const struct sock_fprog){ARRAY_SIZE(filter), filter});
 }
