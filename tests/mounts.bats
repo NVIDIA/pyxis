@@ -51,7 +51,7 @@ load ./common
 @test "--container-mounts path escape attempt" {
     run_srun_unchecked --container-mounts=/home:../home  --container-image=ubuntu:18.04 true
     [ "${status}" -ne 0 ]
-    grep -q 'Cross-device link' <<< "${output}"
+    grep -q -i 'cross-device link' <<< "${output}"
 }
 
 @test "--container-mounts short-form" {
