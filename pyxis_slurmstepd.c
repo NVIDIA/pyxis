@@ -1133,7 +1133,7 @@ static pid_t enroot_container_start(void)
 	 * small static C program bind-mounted inside the container.
 	*/
 	pid = enroot_exec(context.job.uid, context.job.gid,
-			  (char *const[]){ "enroot", "start", "--rw", "--conf", conf_file, context.container.name, "sh", "-c",
+			  (char *const[]){ "enroot", "start", "--conf", conf_file, context.container.name, "sh", "-c",
 					   "kill -STOP $$ ; exit 0", NULL });
 	if (pid < 0) {
 		slurm_error("pyxis: failed to start container");
