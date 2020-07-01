@@ -26,3 +26,27 @@ function teardown() {
     run_srun --container-image=./ubuntu-modified.sqsh cat /test
     [ "${lines[-1]}" == "pyxis" ]
 }
+
+@test "--container-save absolute path" {
+    readonly image="$(pwd)/ubuntu-modified.sqsh"
+    run_srun --container-image=ubuntu:20.04 --container-save=${image} sh -c 'echo pyxis > /test'
+    run_srun --container-image=${image} --container-save=${image} sh -c 'echo slurm > /test2'
+    run_srun --container-image=${image} --container-save=${image} sh -c 'apt-get update && apt-get install -y file'
+    run_srun --container-image=${image} which file
+    run_srun --container-image=${image} cat /test
+    [ "${lines[-1]}" == "pyxis" ]
+    run_srun --container-image=${image} cat /test2
+    [ "${lines[-1]}" == "slurm" ]
+}
+
+@test "--container-save relative path" {
+    readonly image="./ubuntu-modified.sqsh"
+    run_srun --container-image=ubuntu:20.04 --container-save=${image} sh -c 'echo pyxis > /test'
+    run_srun --container-image=${image} --container-save=${image} sh -c 'echo slurm > /test2'
+    run_srun --container-image=${image} --container-save=${image} sh -c 'apt-get update && apt-get install -y file'
+    run_srun --container-image=${image} which file
+    run_srun --container-image=${image} cat /test
+    [ "${lines[-1]}" == "pyxis" ]
+    run_srun --container-image=${image} cat /test2
+    [ "${lines[-1]}" == "slurm" ]
+}

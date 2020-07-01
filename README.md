@@ -16,7 +16,7 @@ A pyxis is an [ancient small box or container](https://en.wikipedia.org/wiki/Pyx
 * Does not require cluster-wide management of subordinate user/group ids.
 
 ## Installation
-Pyxis requires the [enroot](https://github.com/nvidia/enroot) container utility to be installed.
+Pyxis requires the [enroot](https://github.com/nvidia/enroot) container utility (version `3.1.0`) to be installed.
 
 ```console
 $ # Option 1: quick install from sources
@@ -56,6 +56,8 @@ $ srun --help
                               containers are not. If a container with this name
                               already exists, the existing container is used and
                               the import is skipped.
+      --container-save=PATH   [pyxis] Save the container state to a squashfs
+                              file on the remote host filesystem.
       --container-mount-home  [pyxis] bind mount the user's home directory.
                               System-level enroot settings might cause this
                               directory to be already-mounted.

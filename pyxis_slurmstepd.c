@@ -35,6 +35,7 @@ SPANK_PLUGIN(pyxis, 1)
 
 struct container {
 	char *name;
+	char *save_path;
 	bool reuse_rootfs;
 	bool reuse_pid;
 	bool temporary;
@@ -51,6 +52,7 @@ struct job_info {
 	uint32_t jobid;
 	uint32_t stepid;
 	char **environ;
+	char cwd[PATH_MAX];
 };
 
 struct plugin_args {
@@ -59,6 +61,7 @@ struct plugin_args {
 	size_t mounts_len;
 	char *workdir;
 	char *container_name;
+	char *container_save;
 	int mount_home;
 	int remap_root;
 };
@@ -75,9 +78,9 @@ struct plugin_context {
 static struct plugin_context context = {
 	.enabled = false,
 	.log_fd = -1,
-	.args = { .image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .mount_home = -1, .remap_root = -1 },
-	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL },
-	.container = { .name = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .pid = -1, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
+	.args = { .image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .container_save = NULL, .mount_home = -1, .remap_root = -1 },
+	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL, .cwd = { 0 } },
+	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .pid = -1, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
 
@@ -91,6 +94,7 @@ static int spank_option_image(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
 static int spank_option_container_name(int val, const char *optarg, int remote);
+static int spank_option_container_save(int val, const char *optarg, int remote);
 static int spank_option_container_mount_home(int val, const char *optarg, int remote);
 static int spank_option_container_remap_root(int val, const char *optarg, int remote);
 
@@ -123,6 +127,12 @@ struct spank_option spank_opts[] =
 			"Unnamed containers are removed after the slurm task is complete; named containers are not. "
 			"If a container with this name already exists, the existing container is used and the import is skipped.",
 		1, 0, spank_option_container_name
+	},
+	{
+		"container-save",
+		"PATH",
+		"[pyxis] Save the container state to a squashfs file on the remote host filesystem.",
+		1, 0, spank_option_container_save
 	},
 	{
 		"container-mount-home",
@@ -370,6 +380,26 @@ static int spank_option_container_name(int val, const char *optarg, int remote)
 	return (0);
 }
 
+static int spank_option_container_save(int val, const char *optarg, int remote)
+{
+	if (optarg == NULL || *optarg == '\0') {
+		slurm_error("pyxis: --container-save: argument required");
+		return (-1);
+	}
+
+	/* Slurm can call us twice with the same value, check if it's a different value than before. */
+	if (context.args.container_save != NULL) {
+		if (strcmp(context.args.container_save, optarg) == 0)
+			return (0);
+
+		slurm_error("pyxis: --container-save specified multiple times");
+		return (-1);
+	}
+
+	context.args.container_save = strdup(optarg);
+	return (0);
+}
+
 static int spank_option_container_mount_home(int val, const char *optarg, int remote)
 {
 	if (context.args.mount_home != -1 && context.args.mount_home != val) {
@@ -483,6 +513,11 @@ static int job_get_info(spank_t sp, struct job_info *job)
 		if (job->environ[i] == NULL)
 			goto fail;
 	}
+
+	/* This should probably be added to the API as a spank_item */
+	rc = spank_getenv(sp, "PWD", job->cwd, sizeof(job->cwd));
+	if (rc != ESPANK_SUCCESS)
+		slurm_info("pyxis: couldn't get job cwd path: %s", spank_strerror(rc));
 
 	rv = 0;
 
@@ -1225,6 +1260,9 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		context.container.temporary = true;
 	}
 
+	if (context.args.container_save != NULL)
+		context.container.save_path = strdup(context.args.container_save);
+
 	if (!context.container.reuse_rootfs) {
 		ret = enroot_container_create();
 		if (ret < 0)
@@ -1488,9 +1526,49 @@ fail:
 	return (rv);
 }
 
+static int enroot_container_export(void)
+{
+	int ret;
+	char path[PATH_MAX];
+
+	if (context.container.save_path == NULL)
+		return (0);
+
+	if (context.container.save_path[0] == '/') {
+		if (memccpy(path, context.container.save_path, '\0', sizeof(path)) == NULL)
+			return (-1);
+	} else {
+		if (context.job.cwd[0] == '\0') {
+			slurm_error("pyxis: container export: relative path used, but job's cwd is unset");
+			return (-1);
+		}
+
+		ret = snprintf(path, sizeof(path), "%s/%s", context.job.cwd, context.container.save_path);
+		if (ret < 0 || ret >= sizeof(path))
+			return (-1);
+	}
+
+	slurm_info("pyxis: saving container filesystem at %s", path);
+	ret = enroot_exec_wait(context.job.uid, context.job.gid,
+			       (char *const[]){ "enroot", "export", "-f", "-o", path, context.container.name, NULL });
+	if (ret < 0) {
+		enroot_print_last_log();
+		return (-1);
+	}
+
+	return (0);
+}
+
 int slurm_spank_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
+	int rv = 0;
+
+	ret = enroot_container_export();
+	if (ret < 0) {
+		slurm_error("pyxis: failed to save container filesystem");
+		rv = -1;
+	}
 
 	if (context.container.temporary) {
 		slurm_info("pyxis: removing container filesystem ...");
@@ -1503,6 +1581,7 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 		}
 	}
 	free(context.container.name);
+	free(context.container.save_path);
 
 	free(context.args.image);
 	for (int i = 0; i < context.args.mounts_len; ++i)
@@ -1510,6 +1589,7 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 	free(context.args.mounts);
 	free(context.args.workdir);
 	free(context.args.container_name);
+	free(context.args.container_save);
 
 	if (context.job.environ != NULL) {
 		for (int i = 0; context.job.environ[i] != NULL; ++i)
@@ -1525,5 +1605,5 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 
 	memset(&context, 0, sizeof(context));
 
-	return (0);
+	return (rv);
 }
