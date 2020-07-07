@@ -23,7 +23,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <spank.h>
+#include <slurm/spank.h>
 
 #include "common.h"
 #include "seccomp_filter.h"

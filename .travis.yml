@@ -31,6 +31,7 @@ install:
     - echo "deb https://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main" | sudo tee /etc/apt/sources.list.d/clang.list
     - sudo apt-get update
     - sudo apt-get install -y --no-install-recommends clang-10 clang-tools-10 llvm-10-dev
+    - sudo ln -s /usr/include/slurm-wlm /usr/include/slurm
 
 jobs:
     include:
