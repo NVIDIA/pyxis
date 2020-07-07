@@ -438,11 +438,13 @@ static bool pyxis_remap_root()
 	return context.args.remap_root == 1 || (context.args.remap_root == -1 && PYXIS_REMAP_ROOT_DEFAULT == 1);
 }
 
+extern int slurm_spank_slurmd_init(spank_t sp, int ac, char **av);
+
 int slurm_spank_init(spank_t sp, int ac, char **av)
 {
 	spank_err_t rc;
 
-	/* Slurm bug: see pyxis_slurmd.c */
+	/* See https://bugs.schedmd.com/show_bug.cgi?id=7006 */
 	if (spank_context() == S_CTX_SLURMD)
 		return slurm_spank_slurmd_init(sp, ac, av);
 

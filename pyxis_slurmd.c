@@ -10,10 +10,6 @@
 
 #include "common.h"
 
-/*
- * Slurm bug: this SPANK callback is never called, instead slurm_spank_init is called with
- * context S_CTX_SLURMD.
- */
 int slurm_spank_slurmd_init(spank_t sp, int ac, char **av)
 {
 	int ret;
