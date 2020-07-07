@@ -93,12 +93,6 @@ static struct plugin_context context = {
 	.user_init_rv = 0,
 };
 
-static const char *static_mount_entries[] = {
-	/* PMIX_SERVER_TMPDIR is the only PMIX variable set in the SPANK environment when calling enroot */
-	"${PMIX_SERVER_TMPDIR:-/dev/null} ${PMIX_SERVER_TMPDIR:-/dev/null} x-create=dir,rw,bind,nofail,silent",
-	NULL
-};
-
 static int spank_option_image(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
@@ -476,8 +470,6 @@ int slurm_spank_init(spank_t sp, int ac, char **av)
 static int job_get_info(spank_t sp, struct job_info *job)
 {
 	spank_err_t rc;
-	char **spank_environ = NULL;
-	size_t environ_len = 0;
 	int rv = -1;
 
 	rc = spank_get_item(sp, S_JOB_UID, &job->uid);
@@ -510,10 +502,35 @@ static int job_get_info(spank_t sp, struct job_info *job)
 		goto fail;
 	}
 
+	/* This should probably be added to the API as a spank_item */
+	rc = spank_getenv(sp, "PWD", job->cwd, sizeof(job->cwd));
+	if (rc != ESPANK_SUCCESS)
+		slurm_info("pyxis: couldn't get job cwd path: %s", spank_strerror(rc));
+
+	rv = 0;
+
+fail:
+	return (rv);
+}
+
+static int job_get_env(spank_t sp, struct job_info *job)
+{
+	spank_err_t rc;
+	char **spank_environ = NULL;
+	size_t environ_len = 0;
+	int rv = -1;
+
 	rc = spank_get_item(sp, S_JOB_ENV, &spank_environ);
 	if (rc != ESPANK_SUCCESS) {
 		slurm_error("pyxis: couldn't get job environment: %s", spank_strerror(rc));
 		goto fail;
+	}
+
+	if (job->environ != NULL) {
+		for (int i = 0; job->environ[i] != NULL; ++i)
+			free(job->environ[i]);
+		free(job->environ);
+		job->environ = NULL;
 	}
 
 	/* We need to make a copy of the environment returned by the SPANK API. */
@@ -530,11 +547,6 @@ static int job_get_info(spank_t sp, struct job_info *job)
 		if (job->environ[i] == NULL)
 			goto fail;
 	}
-
-	/* This should probably be added to the API as a spank_item */
-	rc = spank_getenv(sp, "PWD", job->cwd, sizeof(job->cwd));
-	if (rc != ESPANK_SUCCESS)
-		slurm_info("pyxis: couldn't get job cwd path: %s", spank_strerror(rc));
 
 	rv = 0;
 
@@ -652,12 +664,18 @@ static const char *enroot_want_env[] = {
 	"MELLANOX_VISIBLE_DEVICES=",
 	"MELLANOX_MOUNT_DRIVER=",
 	"ENROOT_CONFIG_PATH=",
-	"SLURM_",
+	/* Need to limit which SLURM variables are passed, to avoid enroot overriding variables such as SLURM_LOCALID */
+	"SLURM_JOB_ID=", "SLURM_STEP_ID=",
+	"SLURM_MPI_TYPE=", "SLURM_NODELIST=", "SLURM_NTASKS=",
+	"PMIX_SECURITY_MODE=", "PMIX_GDS_MODULE=", "PMIX_PTL_MODULE=",
 	NULL
 };
 
 static int enroot_import_job_env(char **env)
 {
+	if (env == NULL)
+		return (-1);
+
 	for (int i = 0; env[i]; ++i)
 		for (int j = 0; enroot_want_env[j]; ++j)
 			if (strncmp(env[i], enroot_want_env[j], strlen(enroot_want_env[j])) == 0)
@@ -1109,27 +1127,22 @@ static int enroot_create_start_config(void)
 		goto fail;
 	dup_fd = -1;
 
-	ret = fprintf(f, "mounts() {\n");
-	if (ret < 0)
-		goto fail;
+	if (context.args.mounts_len > 0) {
+		ret = fprintf(f, "mounts() {\n");
+		if (ret < 0)
+			goto fail;
 
-	/* static mount entries */
-	for (int i = 0; static_mount_entries[i] != NULL; ++i) {
-		ret = fprintf(f, "\techo \"%s\"\n", static_mount_entries[i]);
+		/* bind mount entries */
+		for (int i = 0; i < context.args.mounts_len; ++i) {
+			ret = fprintf(f, "\techo \"%s\"\n", context.args.mounts[i]);
+			if (ret < 0)
+				goto fail;
+		}
+
+		ret = fprintf(f, "}\n");
 		if (ret < 0)
 			goto fail;
 	}
-
-	/* bind mount entries */
-	for (int i = 0; i < context.args.mounts_len; ++i) {
-		ret = fprintf(f, "\techo \"%s\"\n", context.args.mounts[i]);
-		if (ret < 0)
-			goto fail;
-	}
-
-	ret = fprintf(f, "}\n");
-	if (ret < 0)
-		goto fail;
 
 	/* print contents */
 	if (fseek(f, 0, SEEK_SET) == 0) {
@@ -1304,6 +1317,10 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	if (context.shm == NULL)
 		goto fail;
 
+	ret = job_get_env(sp, &context.job);
+	if (ret < 0)
+		goto fail;
+
 	if (context.args.container_name != NULL) {
 		ret = enroot_container_get(context.args.container_name, &pid);
 		if (ret < 0) {
@@ -1366,49 +1383,6 @@ static int spank_copy_env(spank_t sp, const char *from, const char *to, int over
 	if (rc != ESPANK_SUCCESS) {
 		slurm_error("pyxis: failed to set %s: %s", to, spank_strerror(rc));
 		return (-1);
-	}
-
-	return (0);
-}
-
-static bool pmix_enabled(spank_t sp)
-{
-	spank_err_t rc;
-
-	rc = spank_getenv(sp, "PMIX_RANK", NULL, 0);
-	if (rc == ESPANK_ENV_NOEXIST || rc != ESPANK_NOSPACE)
-		return (false);
-
-	return (true);
-}
-
-static struct {
-	const char *from;
-	const char *to;
-} pmix_remap_list[] = {
-	{ "PMIX_SECURITY_MODE", "PMIX_MCA_psec" },
-	{ "PMIX_GDS_MODULE", "PMIX_MCA_gds" },
-	{ "PMIX_PTL_MODULE", "PMIX_MCA_ptl" },
-	{ NULL, NULL }
-};
-
-/*
- * Since the MCA parameters file won't be accessible from inside the container, we need to
- * set the 3 essential PMIx variables: PMIX_MCA_psec, PMIX_MCA_gds and PMIX_MCA_ptl.
- *
- * Note that we can't use the PMIx/PMI hook from enroot since the PMIx environment
- * variables are not set yet when we execute "enroot start".
- */
-static int pmix_setup(spank_t sp)
-{
-	int ret;
-
-	for (int i = 0; pmix_remap_list[i].from != NULL; ++i) {
-		ret = spank_copy_env(sp, pmix_remap_list[i].from, pmix_remap_list[i].to, 1);
-		if (ret < 0) {
-			slurm_error("pyxis: pmix: couldn't remap environment variable %s", pmix_remap_list[i].from);
-			return (-1);
-		}
 	}
 
 	return (0);
@@ -1527,6 +1501,11 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	if (context.user_init_rv != 0)
 		return (context.user_init_rv);
 
+	/* reload the job's environment in this context, to get PMIx variables */
+	ret = job_get_env(sp, &context.job);
+	if (ret < 0)
+		goto fail;
+
 	ret = enroot_start_once(&context.container, context.shm);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't start container");
@@ -1543,12 +1522,6 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't read container environment");
 		goto fail;
-	}
-
-	if (pmix_enabled(sp)) {
-		ret = pmix_setup(sp);
-		if (ret < 0)
-			goto fail;
 	}
 
 	if (pytorch_setup_needed(sp)) {
