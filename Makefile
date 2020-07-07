@@ -15,7 +15,7 @@ CPPFLAGS := -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 $(CPPFLAGS)
 CFLAGS := -std=gnu11 -O2 -g -Wall -Wunused-variable -fstack-protector-strong -fpic $(CFLAGS)
 LDFLAGS := -Wl,-znoexecstack -Wl,-zrelro -Wl,-znow $(LDFLAGS)
 
-C_SRCS := common.c pyxis_slurmstepd.c pyxis_slurmd.c
+C_SRCS := common.c args.c pyxis_slurmstepd.c pyxis_slurmd.c pyxis_srun.c pyxis_dispatch.c
 C_OBJS := $(C_SRCS:.c=.o)
 
 DEPS := $(C_OBJS:%.o=%.d)
@@ -26,7 +26,7 @@ $(C_OBJS): %.o: %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MF $*.d -c $<
 
 $(PLUGIN): $(C_OBJS)
-	$(CC) -shared $(LDFLAGS) -o $@ $^
+	$(CC) -shared $(LDFLAGS) -o $@ spank_pyxis.lds $^
 	strip --strip-unneeded -R .comment $@
 
 install: all

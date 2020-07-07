@@ -25,10 +25,10 @@
 
 #include <slurm/spank.h>
 
+#include "pyxis_slurmstepd.h"
 #include "common.h"
+#include "args.h"
 #include "seccomp_filter.h"
-
-SPANK_PLUGIN(pyxis, 1)
 
 #define PYXIS_REMAP_ROOT_DEFAULT 1
 #define CONTAINER_NAME_FMT "%u.%u"
@@ -56,17 +56,6 @@ struct job_info {
 	char cwd[PATH_MAX];
 };
 
-struct plugin_args {
-	char *image;
-	char **mounts;
-	size_t mounts_len;
-	char *workdir;
-	char *container_name;
-	char *container_save;
-	int mount_home;
-	int remap_root;
-};
-
 struct shared_memory {
 	pthread_mutex_t mutex;
 	uint32_t init_tasks;
@@ -77,7 +66,7 @@ struct shared_memory {
 struct plugin_context {
 	bool enabled;
 	int log_fd;
-	struct plugin_args args;
+	struct plugin_args *args;
 	struct job_info job;
 	struct container container;
 	int user_init_rv;
@@ -87,381 +76,23 @@ struct plugin_context {
 static struct plugin_context context = {
 	.enabled = false,
 	.log_fd = -1,
-	.args = { .image = NULL, .mounts = NULL, .mounts_len = 0, .workdir = NULL, .container_name = NULL, .container_save = NULL, .mount_home = -1, .remap_root = -1 },
+	.args = NULL,
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL, .cwd = { 0 } },
 	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
 
-static int spank_option_image(int val, const char *optarg, int remote);
-static int spank_option_mount(int val, const char *optarg, int remote);
-static int spank_option_workdir(int val, const char *optarg, int remote);
-static int spank_option_container_name(int val, const char *optarg, int remote);
-static int spank_option_container_save(int val, const char *optarg, int remote);
-static int spank_option_container_mount_home(int val, const char *optarg, int remote);
-static int spank_option_container_remap_root(int val, const char *optarg, int remote);
-
-struct spank_option spank_opts[] =
-{
-	{
-		"container-image",
-		"[USER@][REGISTRY#]IMAGE[:TAG]|PATH",
-		"[pyxis] the image to use for the container filesystem. Can be either a docker image given as an enroot URI, "
-			"or a path to a squashfs file on the remote host filesystem.",
-		1, 0, spank_option_image
-	},
-	{
-		"container-mounts",
-		"SRC:DST[:FLAGS][,SRC:DST...]",
-		"[pyxis] bind mount[s] inside the container. "
-		"Mount flags are separated with \"+\", e.g. \"ro+rprivate\"",
-		1, 0, spank_option_mount
-	},
-	{
-		"container-workdir",
-		"PATH",
-		"[pyxis] working directory inside the container",
-		1, 0, spank_option_workdir
-	},
-	{
-		"container-name",
-		"NAME",
-		"[pyxis] name to use for saving and loading the container on the host. "
-			"Unnamed containers are removed after the slurm task is complete; named containers are not. "
-			"If a container with this name already exists, the existing container is used and the import is skipped.",
-		1, 0, spank_option_container_name
-	},
-	{
-		"container-save",
-		"PATH",
-		"[pyxis] Save the container state to a squashfs file on the remote host filesystem.",
-		1, 0, spank_option_container_save
-	},
-	{
-		"container-mount-home",
-		NULL,
-		"[pyxis] bind mount the user's home directory. "
-		"System-level enroot settings might cause this directory to be already-mounted.",
-		0, 1, spank_option_container_mount_home
-	},
-	{
-		"no-container-mount-home",
-		NULL,
-		"[pyxis] do not bind mount the user's home directory",
-		0, 0, spank_option_container_mount_home
-	},
-	{
-		"container-remap-root",
-		NULL,
-		"[pyxis] ask to be remapped to root inside the container. "
-		"Does not grant elevated system permissions, despite appearances."
-#if PYXIS_REMAP_ROOT_DEFAULT == 1
-		" (default)"
-#endif
-		,
-		0, 1, spank_option_container_remap_root
-	},
-	{
-		"no-container-remap-root",
-		NULL,
-		"[pyxis] do not remap to root inside the container"
-#if PYXIS_REMAP_ROOT_DEFAULT == 0
-		" (default)"
-#endif
-		,
-		0, 0, spank_option_container_remap_root
-	},
-	SPANK_OPTIONS_TABLE_END
-};
-
-static int spank_option_image(int val, const char *optarg, int remote)
-{
-	if (optarg == NULL || *optarg == '\0') {
-		slurm_error("pyxis: --container-image: argument required");
-		return (-1);
-	}
-
-	/* Slurm can call us twice with the same value, check if it's a different value than before. */
-	if (context.args.image != NULL) {
-		if (strcmp(context.args.image, optarg) == 0)
-			return (0);
-
-		slurm_error("pyxis: --container-image specified multiple times");
-		return (-1);
-	}
-
-	context.args.image = strdup(optarg);
-	return (0);
-}
-
-static int add_mount_entry(const char *entry)
-{
-	char *entry_dup = NULL;
-	char **p = NULL;
-	int rv = -1;
-
-	for (size_t i = 0; i < context.args.mounts_len; ++i) {
-		/* This mount entry already exists, skip it. */
-		if (strcmp(context.args.mounts[i], entry) == 0) {
-			slurm_info("pyxis: skipping duplicate mount entry: %s", entry);
-			return (0);
-		}
-	}
-
-	entry_dup = strdup(entry);
-	if (entry_dup == NULL)
-		goto fail;
-
-	p = realloc(context.args.mounts, sizeof(*context.args.mounts) * (context.args.mounts_len + 1));
-	if (p == NULL)
-		goto fail;
-	context.args.mounts = p;
-	p = NULL;
-
-	context.args.mounts[context.args.mounts_len] = entry_dup;
-	entry_dup = NULL;
-	context.args.mounts_len += 1;
-
-	rv = 0;
-
-fail:
-	free(entry_dup);
-	free(p);
-	return (rv);
-}
-
-static int add_mount(const char *source, const char *target, const char *flags)
-{
-	int ret;
-	char *entry = NULL;
-	int rv = -1;
-
-	if (flags != NULL)
-		ret = asprintf(&entry, "%s %s x-create=auto,rbind,%s", source, target, flags);
-	else
-		ret = asprintf(&entry, "%s %s x-create=auto,rbind", source, target);
-	if (ret < 0) {
-		slurm_error("pyxis: could not allocate memory");
-		goto fail;
-	}
-
-	ret = add_mount_entry(entry);
-	if (ret < 0)
-		goto fail;
-
-	rv = 0;
-
-fail:
-	free(entry);
-
-	return (rv);
-}
-
-static int parse_mount_option(const char *option)
-{
-	int ret;
-	char *option_dup = NULL;
-	char *remainder, *src, *dst, *flags = NULL;
-	int rv = -1;
-
-	if (option == NULL)
-		return (-1);
-	option_dup = strdup(option);
-	remainder = option_dup;
-
-	src = strsep(&remainder, ":");
-	if (src == NULL || *src == '\0') {
-		slurm_error("pyxis: --container-mounts: invalid format: %s", option);
-		goto fail;
-	}
-	dst = src;
-
-	if (remainder == NULL)
-		goto done;
-
-	dst = strsep(&remainder, ":");
-	if (dst == NULL || *dst == '\0') {
-		slurm_error("pyxis: --container-mounts: invalid format: %s", option);
-		goto fail;
-	}
-
-	if (remainder == NULL || remainder[0] == '\0')
-		goto done;
-	flags = remainder;
-	/*
-	 * enroot uses "," as the separator for mount flags, but we already use this character for
-	 * separating mount entries, so we use "+" for mount flags and convert to "," here.
-	 */
-	for (int i = 0; flags[i]; ++i)
-		if (flags[i] == '+')
-			flags[i] = ',';
-
-done:
-	ret = add_mount(src, dst, flags);
-	if (ret < 0) {
-		slurm_error("pyxis: could not add mount entry: %s:%s", src, dst);
-		goto fail;
-	}
-
-	rv = 0;
-
-fail:
-	free(option_dup);
-	return (rv);
-}
-
-static int spank_option_mount(int val, const char *optarg, int remote)
-{
-	int ret;
-	char *optarg_dup = NULL;
-	char *args, *arg;
-	int rv = -1;
-
-	if (optarg == NULL || *optarg == '\0') {
-		slurm_error("pyxis: --container-mounts: argument required");
-		goto fail;
-	}
-
-	optarg_dup = strdup(optarg);
-	if (optarg_dup == NULL) {
-		slurm_error("pyxis: could not allocate memory");
-		goto fail;
-	}
-
-	args = optarg_dup;
-	while ((arg = strsep(&args, ",")) != NULL) {
-		ret = parse_mount_option(arg);
-		if (ret < 0)
-			goto fail;
-	}
-
-	rv = 0;
-
-fail:
-	free(optarg_dup);
-
-	return (rv);
-}
-
-static int spank_option_workdir(int val, const char *optarg, int remote)
-{
-	if (optarg == NULL || *optarg == '\0') {
-		slurm_error("pyxis: --container-workdir: argument required");
-		return (-1);
-	}
-
-	/* Slurm can call us twice with the same value, check if it's a different value than before. */
-	if (context.args.workdir != NULL) {
-		if (strcmp(context.args.workdir, optarg) == 0)
-			return (0);
-
-		slurm_error("pyxis: --container-workdir specified multiple times");
-		return (-1);
-	}
-
-	context.args.workdir = strdup(optarg);
-	return (0);
-}
-
-static int spank_option_container_name(int val, const char *optarg, int remote)
-{
-	if (optarg == NULL || *optarg == '\0') {
-		slurm_error("pyxis: --container-name: argument required");
-		return (-1);
-	}
-
-	/* Slurm can call us twice with the same value, check if it's a different value than before. */
-	if (context.args.container_name != NULL) {
-		if (strcmp(context.args.container_name, optarg) == 0)
-			return (0);
-
-		slurm_error("pyxis: --container-name specified multiple times");
-		return (-1);
-	}
-
-	context.args.container_name = strdup(optarg);
-	return (0);
-}
-
-static int spank_option_container_save(int val, const char *optarg, int remote)
-{
-	if (optarg == NULL || *optarg == '\0') {
-		slurm_error("pyxis: --container-save: argument required");
-		return (-1);
-	}
-
-	/* Slurm can call us twice with the same value, check if it's a different value than before. */
-	if (context.args.container_save != NULL) {
-		if (strcmp(context.args.container_save, optarg) == 0)
-			return (0);
-
-		slurm_error("pyxis: --container-save specified multiple times");
-		return (-1);
-	}
-
-	context.args.container_save = strdup(optarg);
-	return (0);
-}
-
-static int spank_option_container_mount_home(int val, const char *optarg, int remote)
-{
-	if (context.args.mount_home != -1 && context.args.mount_home != val) {
-		slurm_error("pyxis: both --container-mount-home and --no-container-mount-home were specified");
-		return (-1);
-	}
-
-	context.args.mount_home = val;
-
-	return (0);
-}
-
-static int spank_option_container_remap_root(int val, const char *optarg, int remote)
-{
-	if (context.args.remap_root != -1 && context.args.remap_root != val) {
-		slurm_error("pyxis: both --container-remap-root and --no-container-remap-root were specified");
-		return (-1);
-	}
-
-	context.args.remap_root = val;
-
-	return (0);
-}
-
 static bool pyxis_remap_root()
 {
-	return context.args.remap_root == 1 || (context.args.remap_root == -1 && PYXIS_REMAP_ROOT_DEFAULT == 1);
+	return context.args->remap_root == 1 || (context.args->remap_root == -1 && PYXIS_REMAP_ROOT_DEFAULT == 1);
 }
 
-extern int slurm_spank_slurmd_init(spank_t sp, int ac, char **av);
-
-int slurm_spank_init(spank_t sp, int ac, char **av)
+int pyxis_slurmstepd_init(spank_t sp, int ac, char **av)
 {
-	spank_err_t rc;
-
-	/* See https://bugs.schedmd.com/show_bug.cgi?id=7006 */
-	if (spank_context() == S_CTX_SLURMD)
-		return slurm_spank_slurmd_init(sp, ac, av);
-
-	if (spank_context() != S_CTX_LOCAL && spank_context() != S_CTX_REMOTE)
-		return (0);
-
-	if (spank_context() == S_CTX_LOCAL) {
-		/*
-		 * Show slurm_info() messages by default.
-	         * Can get back to default Slurm behavior by setting SLURMD_DEBUG=0.
-		 */
-		if (setenv("SLURMD_DEBUG", "1", 0) != 0) {
-			slurm_error("pyxis: failed to set SLURMD_DEBUG: %s", strerror(errno));
-			return (-1);
-		}
-	}
-
-	for (int i = 0; spank_opts[i].name != NULL; ++i) {
-		rc = spank_option_register(sp, &spank_opts[i]);
-		if (rc != ESPANK_SUCCESS) {
-			slurm_error("pyxis: couldn't register option %s: %s", spank_opts[i].name, spank_strerror(rc));
-			return (-1);
-		}
+	context.args = pyxis_args_register(sp);
+	if (context.args == NULL) {
+		slurm_error("pyxis: failed to register arguments");
+		return (-1);
 	}
 
 	return (0);
@@ -582,28 +213,15 @@ static int enroot_create_user_runtime_dir(void)
 	return (0);
 }
 
-int slurm_spank_init_post_opt(spank_t sp, int ac, char **av)
+int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 {
 	int ret;
 
-	if (context.args.image == NULL && context.args.container_name == NULL) {
-		if (context.args.mounts_len > 0)
-			slurm_error("pyxis: ignoring --container-mounts because neither --container-image nor --container-name is set");
-		if (context.args.workdir != NULL)
-			slurm_error("pyxis: ignoring --container-workdir because neither --container-image nor --container-name is set");
-		if (context.args.mount_home != -1)
-			slurm_error("pyxis: ignoring --[no-]container-mount-home because neither --container-image nor --container-name is set");
-		if (context.args.remap_root != -1)
-			slurm_error("pyxis: ignoring --[no-]container-remap-root because neither --container-image nor --container-name is set");
+	if (!pyxis_args_enabled())
 		return (0);
-	}
 
 	context.enabled = true;
 
-	if (spank_context() != S_CTX_REMOTE)
-		return (0);
-
-	/* In slurmstepd context, create the user runtime directory and group cache directory. */
 	ret = job_get_info(sp, &context.job);
 	if (ret < 0)
 		return (-1);
@@ -690,10 +308,10 @@ static int enroot_set_env(void)
 	if (enroot_import_job_env(context.job.environ) < 0)
 		return (-1);
 
-	if (context.args.mount_home == 0) {
+	if (context.args->mount_home == 0) {
 		if (setenv("ENROOT_MOUNT_HOME", "n", 1) < 0)
 			return (-1);
-	} else if (context.args.mount_home == 1) {
+	} else if (context.args->mount_home == 1) {
 		if (setenv("ENROOT_MOUNT_HOME", "y", 1) < 0)
 			return (-1);
 	} else {
@@ -998,16 +616,16 @@ static int enroot_container_create(void)
 	bool should_delete_squashfs = false;
 	int rv = -1;
 
-	if (strspn(context.args.image, "./") > 0) {
+	if (strspn(context.args->image, "./") > 0) {
 		/* Assume `image` is a path to a squashfs file. */
-		if (strnlen(context.args.image, sizeof(squashfs_path)) >= sizeof(squashfs_path))
+		if (strnlen(context.args->image, sizeof(squashfs_path)) >= sizeof(squashfs_path))
 			goto fail;
 
-		strncpy(squashfs_path, context.args.image, sizeof(squashfs_path) - 1);
+		strncpy(squashfs_path, context.args->image, sizeof(squashfs_path) - 1);
 		squashfs_path[sizeof(squashfs_path) - 1] = '\0';
 	} else {
 		/* Assume `image` is an enroot URI for a docker image. */
-		ret = asprintf(&enroot_uri, "docker://%s", context.args.image);
+		ret = asprintf(&enroot_uri, "docker://%s", context.args->image);
 		if (ret < 0)
 			goto fail;
 
@@ -1127,14 +745,14 @@ static int enroot_create_start_config(void)
 		goto fail;
 	dup_fd = -1;
 
-	if (context.args.mounts_len > 0) {
+	if (context.args->mounts_len > 0) {
 		ret = fprintf(f, "mounts() {\n");
 		if (ret < 0)
 			goto fail;
 
 		/* bind mount entries */
-		for (int i = 0; i < context.args.mounts_len; ++i) {
-			ret = fprintf(f, "\techo \"%s\"\n", context.args.mounts[i]);
+		for (int i = 0; i < context.args->mounts_len; ++i) {
+			ret = fprintf(f, "\techo \"%s\"\n", context.args->mounts[i]);
 			if (ret < 0)
 				goto fail;
 		}
@@ -1321,8 +939,8 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	if (ret < 0)
 		goto fail;
 
-	if (context.args.container_name != NULL) {
-		ret = enroot_container_get(context.args.container_name, &pid);
+	if (context.args->container_name != NULL) {
+		ret = enroot_container_get(context.args->container_name, &pid);
 		if (ret < 0) {
 			slurm_error("pyxis: couldn't get list of containers");
 			goto fail;
@@ -1336,12 +954,12 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		} else if (pid == 0) {
 			slurm_info("pyxis: reusing existing container filesystem");
 			context.container.reuse_rootfs = true;
-		} else if (context.args.image == NULL) {
+		} else if (context.args->image == NULL) {
 			slurm_error("pyxis: a container with name \"%s\" does not exist, and --container-image is not set",
-				    context.args.container_name);
+				    context.args->container_name);
 			goto fail;
 		}
-		context.container.name = strdup(context.args.container_name);
+		context.container.name = strdup(context.args->container_name);
 	} else {
 		ret = asprintf(&context.container.name, CONTAINER_NAME_FMT, context.job.jobid, context.job.stepid);
 		if (ret < 0)
@@ -1349,8 +967,8 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		context.container.temporary = true;
 	}
 
-	if (context.args.container_save != NULL)
-		context.container.save_path = strdup(context.args.container_save);
+	if (context.args->container_save != NULL)
+		context.container.save_path = strdup(context.args->container_save);
 
 	rv = 0;
 
@@ -1551,10 +1169,10 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	}
 
 	/* No need to chdir(root) + chroot(".") since enroot does a pivot_root. */
-	if (context.args.workdir != NULL) {
-		ret = chdir(context.args.workdir);
+	if (context.args->workdir != NULL) {
+		ret = chdir(context.args->workdir);
 		if (ret < 0) {
-			slurm_error("pyxis: couldn't chdir to %s: %s", context.args.workdir, strerror(errno));
+			slurm_error("pyxis: couldn't chdir to %s: %s", context.args->workdir, strerror(errno));
 			return (-1);
 		}
 	} else {
@@ -1601,9 +1219,6 @@ static int enroot_container_export(void)
 	int ret;
 	char path[PATH_MAX];
 
-	if (context.container.save_path == NULL)
-		return (0);
-
 	if (context.container.save_path[0] == '/') {
 		if (memccpy(path, context.container.save_path, '\0', sizeof(path)) == NULL)
 			return (-1);
@@ -1629,37 +1244,35 @@ static int enroot_container_export(void)
 	return (0);
 }
 
-int slurm_spank_exit(spank_t sp, int ac, char **av)
+int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
 	int rv = 0;
 
-	ret = enroot_container_export();
-	if (ret < 0) {
-		slurm_error("pyxis: failed to save container filesystem");
-		rv = -1;
+	if (context.container.save_path != NULL) {
+		slurm_info("pyxis: saving container filesystem ...");
+
+		ret = enroot_container_export();
+		if (ret < 0) {
+			slurm_error("pyxis: failed to save container filesystem");
+			rv = -1;
+		}
 	}
 
 	if (context.container.temporary) {
 		slurm_info("pyxis: removing container filesystem ...");
 
 		ret = enroot_exec_wait(context.job.uid, context.job.gid,
-				       (char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
+				(char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
 		if (ret < 0) {
-			slurm_info("pyxis: failed to remove container filesystem");
+			slurm_error("pyxis: failed to remove container filesystem");
 			enroot_print_last_log();
+			rv = -1;
 		}
 	}
+
 	free(context.container.name);
 	free(context.container.save_path);
-
-	free(context.args.image);
-	for (int i = 0; i < context.args.mounts_len; ++i)
-		free(context.args.mounts[i]);
-	free(context.args.mounts);
-	free(context.args.workdir);
-	free(context.args.container_name);
-	free(context.args.container_save);
 
 	if (context.job.environ != NULL) {
 		for (int i = 0; context.job.environ[i] != NULL; ++i)
@@ -1674,8 +1287,12 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 	xclose(context.log_fd);
 
 	ret = shm_destroy(context.shm);
-	if (ret < 0)
-		slurm_info("couldn't destroy shared memory: %s", strerror(errno));
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't destroy shared memory: %s", strerror(errno));
+		rv = -1;
+	}
+
+	pyxis_args_free();
 
 	memset(&context, 0, sizeof(context));
 

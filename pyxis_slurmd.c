@@ -8,9 +8,10 @@
 
 #include <slurm/spank.h>
 
+#include "pyxis_slurmd.h"
 #include "common.h"
 
-int slurm_spank_slurmd_init(spank_t sp, int ac, char **av)
+int pyxis_slurmd_init(spank_t sp, int ac, char **av)
 {
 	int ret;
 	mode_t mask;
@@ -37,7 +38,7 @@ fail:
 	return (rv);
 }
 
-int slurm_spank_slurmd_exit(spank_t sp, int ac, char **av)
+int pyxis_slurmd_exit(spank_t sp, int ac, char **av)
 {
 	return (0);
 }
