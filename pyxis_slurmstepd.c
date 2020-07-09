@@ -635,7 +635,7 @@ static int enroot_container_create(void)
 
 		should_delete_squashfs = true;
 
-		slurm_info("pyxis: importing docker image ...");
+		slurm_spank_log("pyxis: importing docker image ...");
 
 		ret = enroot_exec_wait(context.job.uid, context.job.gid,
 				       (char *const[]){ "enroot", "import", "--output", squashfs_path, enroot_uri, NULL });
@@ -646,7 +646,7 @@ static int enroot_container_create(void)
 		}
 	}
 
-	slurm_info("pyxis: creating container filesystem ...");
+	slurm_spank_log("pyxis: creating container filesystem ...");
 
 	ret = enroot_exec_wait(context.job.uid, context.job.gid,
 			       (char *const[]){ "enroot", "create", "--name", context.container.name, squashfs_path, NULL });
@@ -792,7 +792,7 @@ static pid_t enroot_container_start(void)
 	int status;
 	pid_t rv = -1;
 
-	slurm_info("pyxis: starting container ...");
+	slurm_spank_log("pyxis: starting container ...");
 
 	conf_fd = enroot_create_start_config();
 	if (conf_fd < 0) {
@@ -947,16 +947,16 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		}
 
 		if (pid > 0) {
-			slurm_info("pyxis: reusing existing container PID");
+			slurm_spank_log("pyxis: reusing existing container PID");
 			context.shm->pid = pid;
 			context.container.reuse_pid = true;
 			context.container.reuse_rootfs = true;
 		} else if (pid == 0) {
-			slurm_info("pyxis: reusing existing container filesystem");
+			slurm_spank_log("pyxis: reusing existing container filesystem");
 			context.container.reuse_rootfs = true;
 		} else if (context.args->image == NULL) {
-			slurm_error("pyxis: a container with name \"%s\" does not exist, and --container-image is not set",
-				    context.args->container_name);
+			slurm_spank_log("pyxis: error: a container with name \"%s\" does not exist, and --container-image is not set",
+					context.args->container_name);
 			goto fail;
 		}
 		context.container.name = strdup(context.args->container_name);
@@ -1233,7 +1233,7 @@ static int enroot_container_export(void)
 			return (-1);
 	}
 
-	slurm_info("pyxis: saving container filesystem at %s", path);
+	slurm_spank_log("pyxis: saving container filesystem at %s", path);
 	ret = enroot_exec_wait(context.job.uid, context.job.gid,
 			       (char *const[]){ "enroot", "export", "-f", "-o", path, context.container.name, NULL });
 	if (ret < 0) {
@@ -1250,7 +1250,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	int rv = 0;
 
 	if (context.container.save_path != NULL) {
-		slurm_info("pyxis: saving container filesystem ...");
+		slurm_spank_log("pyxis: saving container filesystem ...");
 
 		ret = enroot_container_export();
 		if (ret < 0) {
@@ -1260,7 +1260,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	}
 
 	if (context.container.temporary) {
-		slurm_info("pyxis: removing container filesystem ...");
+		slurm_spank_log("pyxis: removing container filesystem ...");
 
 		ret = enroot_exec_wait(context.job.uid, context.job.gid,
 				(char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });

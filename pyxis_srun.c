@@ -19,11 +19,6 @@ static struct plugin_context context = {
 
 int pyxis_srun_init(spank_t sp, int ac, char **av)
 {
-	if (setenv("SLURMD_DEBUG", "1", 0) != 0) {
-		slurm_error("pyxis: failed to set SLURMD_DEBUG: %s", strerror(errno));
-		return (-1);
-	}
-
 	context.args = pyxis_args_register(sp);
 	if (context.args == NULL) {
 		slurm_error("pyxis: failed to register arguments");
