@@ -2,6 +2,7 @@ prefix      ?= /usr/local
 libdir      ?= $(prefix)/lib
 datarootdir ?= $(prefix)/share
 datadir     ?= $(datarootdir)
+slurmprefix ?= /usr
 
 PLUGINDIR := $(abspath $(DESTDIR)/$(libdir)/slurm)
 CONFDIR   := $(abspath $(DESTDIR)/$(datadir)/pyxis)
@@ -11,7 +12,7 @@ CONF   := pyxis.conf
 
 .PHONY: all install uninstall clean deb
 
-CPPFLAGS := -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -I/usr/include/slurm -I/usr/include/slurm-wlm $(CPPFLAGS)
+CPPFLAGS := -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -I$(slurmprefix)/include/slurm -I$(slurmprefix)/include/slurm-wlm $(CPPFLAGS)
 CFLAGS := -std=gnu11 -O2 -g -Wall -Wunused-variable -fstack-protector-strong -fpic $(CFLAGS)
 LDFLAGS := -Wl,-znoexecstack -Wl,-zrelro -Wl,-znow $(LDFLAGS)
 
