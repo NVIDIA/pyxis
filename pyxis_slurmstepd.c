@@ -1184,19 +1184,6 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	}
 
 	if (pyxis_remap_root()) {
-		/* The user will see themself as (remapped) uid/gid 0 inside the container */
-		ret = setgid(0);
-		if (ret < 0) {
-			slurm_error("pyxis: setgid failed");
-			goto fail;
-		}
-
-		ret = setuid(0);
-		if (ret < 0) {
-			slurm_error("pyxis: setuid failed");
-			goto fail;
-		}
-
 		ret = seccomp_set_filter();
 		if (ret < 0) {
 			slurm_error("pyxis: seccomp filter failed: %s", strerror(errno));
