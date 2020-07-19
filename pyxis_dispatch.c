@@ -50,4 +50,7 @@ int slurm_spank_exit(spank_t sp, int ac, char **av)
 	}
 }
 
-
+int slurm_spank_slurmd_exit(spank_t sp, int ac, char **av)
+{
+	return pyxis_slurmd_exit(sp, ac, av);
+}
