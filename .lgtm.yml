@@ -9,6 +9,6 @@ extraction:
         - perl
     index:
       build_command:
-        - mkdir slurm
-        - curl -fsSL 'https://raw.githubusercontent.com/SchedMD/slurm/slurm-19-05-5-1/slurm/spank.h' -o slurm/spank.h
-        - CPPFLAGS='-I ./slurm/' make -k
+        - mkdir -p include/slurm
+        - curl -fsSL 'https://raw.githubusercontent.com/SchedMD/slurm/slurm-20-02-3-1/slurm/spank.h' -o include/slurm/spank.h
+        - CPPFLAGS='-I ./include/' make -k
