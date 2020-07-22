@@ -1184,7 +1184,7 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	ret = setns(context.container.mntns_fd, CLONE_NEWNS);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't join mount namespace: %s", strerror(errno));
-		return (-1);
+		goto fail;
 	}
 
 	/* No need to chdir(root) + chroot(".") since enroot does a pivot_root. */
@@ -1192,13 +1192,13 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		ret = chdir(context.args->workdir);
 		if (ret < 0) {
 			slurm_error("pyxis: couldn't chdir to %s: %s", context.args->workdir, strerror(errno));
-			return (-1);
+			goto fail;
 		}
 	} else {
 		ret = fchdir(context.container.cwd_fd);
 		if (ret < 0) {
 			slurm_error("pyxis: couldn't chdir to container cwd: %s", strerror(errno));
-			return (-1);
+			goto fail;
 		}
 	}
 
