@@ -19,11 +19,6 @@ static struct plugin_args pyxis_args = {
 	.remap_root = -1,
 };
 
-struct plugin_args *pyxis_args_get(void)
-{
-	return &pyxis_args;
-}
-
 static int spank_option_image(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
