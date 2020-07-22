@@ -10,23 +10,27 @@
 
 #include "pyxis_slurmd.h"
 #include "common.h"
+#include "config.h"
 
 int pyxis_slurmd_init(spank_t sp, int ac, char **av)
 {
 	int ret;
+	struct plugin_config config;
 	mode_t mask;
 	int rv = -1;
 
+	ret = pyxis_config_parse(&config, ac, av);
+	if (ret < 0) {
+		slurm_error("pyxis: failed to parse configuration");
+		return (-1);
+	}
+
 	mask = umask(0);
 
-	/*
-	 * Since Slurm might not be configured to integrate with PAM and
-	 * logind, we can't assume /run/user/<uid> will be present.
-	 * Instead, we create a new directory under an existing tmpfs (e.g. /run/pyxis).
-	 */
-	ret = mkdir(PYXIS_RUNTIME_PATH, 0755);
+	/* We only attempt to create the last component of the path. */
+	ret = mkdir(config.runtime_path, 0755);
 	if (ret < 0 && errno != EEXIST) {
-		slurm_error("pyxis: slurmd: couldn't mkdir %s: %s", PYXIS_RUNTIME_PATH, strerror(errno));
+		slurm_error("pyxis: slurmd: couldn't mkdir %s: %s", config.runtime_path, strerror(errno));
 		goto fail;
 	}
 

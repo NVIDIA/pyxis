@@ -27,12 +27,11 @@
 
 #include "pyxis_slurmstepd.h"
 #include "common.h"
+#include "config.h"
 #include "args.h"
 #include "seccomp_filter.h"
 
 #define PYXIS_REMAP_ROOT_DEFAULT 1
-#define CONTAINER_NAME_FMT "%u.%u"
-#define PYXIS_SQUASHFS_FILE PYXIS_USER_RUNTIME_PATH "/" CONTAINER_NAME_FMT ".squashfs"
 
 struct container {
 	char *name;
@@ -66,6 +65,7 @@ struct shared_memory {
 struct plugin_context {
 	bool enabled;
 	int log_fd;
+	struct plugin_config config;
 	struct plugin_args *args;
 	struct job_info job;
 	struct container container;
@@ -76,6 +76,7 @@ struct plugin_context {
 static struct plugin_context context = {
 	.enabled = false,
 	.log_fd = -1,
+	.config = { .runtime_path = { 0 } },
 	.args = NULL,
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL, .cwd = { 0 } },
 	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
@@ -89,6 +90,14 @@ static bool pyxis_remap_root()
 
 int pyxis_slurmstepd_init(spank_t sp, int ac, char **av)
 {
+	int ret;
+
+	ret = pyxis_config_parse(&context.config, ac, av);
+	if (ret < 0) {
+		slurm_error("pyxis: failed to parse configuration");
+		return (-1);
+	}
+
 	context.args = pyxis_args_register(sp);
 	if (context.args == NULL) {
 		slurm_error("pyxis: failed to register arguments");
@@ -191,7 +200,7 @@ static int enroot_create_user_runtime_dir(void)
 	int ret;
 	char path[PATH_MAX];
 
-	ret = snprintf(path, sizeof(path), PYXIS_USER_RUNTIME_PATH, context.job.uid);
+	ret = snprintf(path, sizeof(path), "%s/%u", context.config.runtime_path, context.job.uid);
 	if (ret < 0 || ret >= sizeof(path))
 		return (-1);
 
@@ -629,7 +638,7 @@ static int enroot_container_create(void)
 		if (ret < 0)
 			goto fail;
 
-		ret = snprintf(squashfs_path, sizeof(squashfs_path), PYXIS_SQUASHFS_FILE, context.job.uid, context.job.jobid, context.job.stepid);
+		ret = snprintf(squashfs_path, sizeof(squashfs_path), "%s/%u/%u.%u.squashfs", context.config.runtime_path, context.job.uid, context.job.jobid, context.job.stepid);
 		if (ret < 0 || ret >= sizeof(squashfs_path))
 			goto fail;
 
@@ -949,7 +958,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		}
 		context.container.name = strdup(context.args->container_name);
 	} else {
-		ret = asprintf(&context.container.name, CONTAINER_NAME_FMT, context.job.jobid, context.job.stepid);
+		ret = asprintf(&context.container.name, "%u.%u", context.job.jobid, context.job.stepid);
 		if (ret < 0)
 			goto fail;
 		context.container.temporary = true;
