@@ -26,7 +26,7 @@ function teardown() {
 
 @test "named container persistence" {
     run_srun --container-image=ubuntu:18.04 bash -c '! which file'
-    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
+    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
     run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test which file
     run_srun --container-name=pyxis-name-test which file
 
@@ -36,7 +36,7 @@ function teardown() {
 }
 
 @test "named container manual remove" {
-    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
+    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
     run_srun --container-name=pyxis-name-test which file
     run_enroot remove -f pyxis-name-test
 

@@ -23,7 +23,7 @@ function teardown() {
 
 @test "attach to running container" {
     run_srun --container-image=ubuntu:18.04 --container-name=pyxis-exec-test mkdir /mymnt
-    run_srun --container-name=pyxis-exec-test bash -c "mount -t tmpfs none /mymnt && sleep 30s" &
+    run_srun --container-name=pyxis-exec-test --container-remap-root bash -c "mount -t tmpfs none /mymnt && sleep 30s" &
 
     sleep 5s # FIXME...
     run_srun --container-name=pyxis-exec-test findmnt /mymnt

@@ -31,8 +31,6 @@
 #include "args.h"
 #include "seccomp_filter.h"
 
-#define PYXIS_REMAP_ROOT_DEFAULT 1
-
 struct container {
 	char *name;
 	char *save_path;
@@ -85,7 +83,7 @@ static struct plugin_context context = {
 
 static bool pyxis_remap_root()
 {
-	return context.args->remap_root == 1 || (context.args->remap_root == -1 && PYXIS_REMAP_ROOT_DEFAULT == 1);
+	return context.args->remap_root == 1 || (context.args->remap_root == -1 && context.config.remap_root == true);
 }
 
 int pyxis_slurmstepd_init(spank_t sp, int ac, char **av)

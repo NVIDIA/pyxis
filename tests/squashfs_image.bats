@@ -19,7 +19,7 @@ function teardown() {
 
 @test "import - export - import" {
     run_enroot import -o ubuntu.sqsh docker://ubuntu:18.04
-    run_srun --container-image=./ubuntu.sqsh --container-name=pyxis-squashfs-test sh -c 'apt-get update && apt-get install -y file'
+    run_srun --container-image=./ubuntu.sqsh --container-name=pyxis-squashfs-test --container-remap-root sh -c 'apt-get update && apt-get install -y file'
     run_srun --container-name=pyxis-squashfs-test sh -c 'echo pyxis > /test'
     run_enroot export -o ubuntu-modified.sqsh pyxis-squashfs-test
     run_srun --container-image=./ubuntu-modified.sqsh which file
@@ -31,7 +31,7 @@ function teardown() {
     readonly image="$(pwd)/ubuntu-modified.sqsh"
     run_srun --container-image=ubuntu:20.04 --container-save=${image} sh -c 'echo pyxis > /test'
     run_srun --container-image=${image} --container-save=${image} sh -c 'echo slurm > /test2'
-    run_srun --container-image=${image} --container-save=${image} sh -c 'apt-get update && apt-get install -y file'
+    run_srun --container-image=${image} --container-save=${image} --container-remap-root sh -c 'apt-get update && apt-get install -y file'
     run_srun --container-image=${image} which file
     run_srun --container-image=${image} cat /test
     [ "${lines[-1]}" == "pyxis" ]
@@ -43,7 +43,7 @@ function teardown() {
     readonly image="./ubuntu-modified.sqsh"
     run_srun --container-image=ubuntu:20.04 --container-save=${image} sh -c 'echo pyxis > /test'
     run_srun --container-image=${image} --container-save=${image} sh -c 'echo slurm > /test2'
-    run_srun --container-image=${image} --container-save=${image} sh -c 'apt-get update && apt-get install -y file'
+    run_srun --container-image=${image} --container-save=${image} --container-remap-root sh -c 'apt-get update && apt-get install -y file'
     run_srun --container-image=${image} which file
     run_srun --container-image=${image} cat /test
     [ "${lines[-1]}" == "pyxis" ]

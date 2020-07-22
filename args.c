@@ -81,9 +81,6 @@ struct spank_option spank_opts[] =
 		NULL,
 		"[pyxis] ask to be remapped to root inside the container. "
 		"Does not grant elevated system permissions, despite appearances."
-#if PYXIS_REMAP_ROOT_DEFAULT == 1
-		" (default)"
-#endif
 		,
 		0, 1, spank_option_container_remap_root
 	},
@@ -91,9 +88,6 @@ struct spank_option spank_opts[] =
 		"no-container-remap-root",
 		NULL,
 		"[pyxis] do not remap to root inside the container"
-#if PYXIS_REMAP_ROOT_DEFAULT == 0
-		" (default)"
-#endif
 		,
 		0, 0, spank_option_container_remap_root
 	},

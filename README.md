@@ -67,7 +67,7 @@ $ srun --help
                               directory
       --container-remap-root  [pyxis] ask to be remapped to root inside the
                               container. Does not grant elevated system
-                              permissions, despite appearances. (default)
+                              permissions, despite appearances.
 
       --no-container-remap-root
                               [pyxis] do not remap to root inside the container
