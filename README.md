@@ -71,6 +71,12 @@ $ srun --help
 
       --no-container-remap-root
                               [pyxis] do not remap to root inside the container
+      --container-entrypoint  [pyxis] execute the entrypoint from the container
+                              image
+
+      --no-container-entrypoint
+                              [pyxis] do not execute the entrypoint from the
+                              container image
 ```
 
 ## Examples

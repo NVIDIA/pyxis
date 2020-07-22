@@ -19,6 +19,7 @@ struct plugin_args {
 	char *container_save;
 	int mount_home;
 	int remap_root;
+	int entrypoint;
 };
 
 struct plugin_args *pyxis_args_register(spank_t sp);

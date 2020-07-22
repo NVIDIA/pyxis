@@ -17,6 +17,7 @@ static struct plugin_args pyxis_args = {
 	.container_save = NULL,
 	.mount_home = -1,
 	.remap_root = -1,
+	.entrypoint = -1,
 };
 
 static int spank_option_image(int val, const char *optarg, int remote);
@@ -26,6 +27,7 @@ static int spank_option_container_name(int val, const char *optarg, int remote);
 static int spank_option_container_save(int val, const char *optarg, int remote);
 static int spank_option_container_mount_home(int val, const char *optarg, int remote);
 static int spank_option_container_remap_root(int val, const char *optarg, int remote);
+static int spank_option_container_entrypoint(int val, const char *optarg, int remote);
 
 struct spank_option spank_opts[] =
 {
@@ -90,6 +92,20 @@ struct spank_option spank_opts[] =
 		"[pyxis] do not remap to root inside the container"
 		,
 		0, 0, spank_option_container_remap_root
+	},
+	{
+		"container-entrypoint",
+		NULL,
+		"[pyxis] execute the entrypoint from the container image"
+		,
+		0, 1, spank_option_container_entrypoint
+	},
+	{
+		"no-container-entrypoint",
+		NULL,
+		"[pyxis] do not execute the entrypoint from the container image"
+		,
+		0, 0, spank_option_container_entrypoint
 	},
 	SPANK_OPTIONS_TABLE_END
 };
@@ -347,6 +363,18 @@ static int spank_option_container_remap_root(int val, const char *optarg, int re
 	return (0);
 }
 
+static int spank_option_container_entrypoint(int val, const char *optarg, int remote)
+{
+	if (pyxis_args.entrypoint != -1 && pyxis_args.entrypoint != val) {
+		slurm_error("pyxis: both --container-entrypoint and --no-container-entrypoint were specified");
+		return (-1);
+	}
+
+	pyxis_args.entrypoint = val;
+
+	return (0);
+}
+
 struct plugin_args *pyxis_args_register(spank_t sp)
 {
 	spank_err_t rc;
@@ -373,6 +401,8 @@ bool pyxis_args_enabled(void)
 			slurm_error("pyxis: ignoring --[no-]container-mount-home because neither --container-image nor --container-name is set");
 		if (pyxis_args.remap_root != -1)
 			slurm_error("pyxis: ignoring --[no-]container-remap-root because neither --container-image nor --container-name is set");
+		if (pyxis_args.entrypoint != -1)
+			slurm_error("pyxis: ignoring --[no-]container-entrypoint because neither --container-image nor --container-name is set");
 		return (false);
 	}
 

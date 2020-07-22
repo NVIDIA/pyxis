@@ -81,9 +81,14 @@ static struct plugin_context context = {
 	.user_init_rv = 0,
 };
 
-static bool pyxis_remap_root()
+static bool pyxis_remap_root(void)
 {
 	return context.args->remap_root == 1 || (context.args->remap_root == -1 && context.config.remap_root == true);
+}
+
+static bool pyxis_execute_entrypoint(void)
+{
+	return context.args->entrypoint == 1 || (context.args->entrypoint == -1 && context.config.execute_entrypoint == true);
 }
 
 int pyxis_slurmstepd_init(spank_t sp, int ac, char **av)
@@ -763,6 +768,24 @@ static int enroot_create_start_config(char (*path)[PATH_MAX])
 			goto fail;
 	}
 
+	if (!pyxis_execute_entrypoint()) {
+		ret = fprintf(f, "hooks() {\n");
+		if (ret < 0)
+			goto fail;
+
+		/*
+		 * /etc/rc.local will be sourced by /etc/rc.
+		 * We call 'exec' from there and do not return control to /etc/rc.
+		 */
+		ret = fprintf(f, "\techo 'exec \"$@\"' > ${ENROOT_ROOTFS}/etc/rc.local\n");
+		if (ret < 0)
+			goto fail;
+
+		ret = fprintf(f, "}\n");
+		if (ret < 0)
+			goto fail;
+	}
+
 	/* print contents */
 	if (fseek(f, 0, SEEK_SET) == 0) {
 		slurm_verbose("pyxis: enroot start configuration script:");
@@ -832,7 +855,7 @@ static pid_t enroot_container_start(void)
 	}
 
 	if (!WIFSTOPPED(status)) {
-		slurm_error("pyxis: container exited too soon, possibly due to an unusual entrypoint in the image");
+		slurm_error("pyxis: container exited too soon");
 		goto fail;
 	}
 
@@ -1122,6 +1145,7 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	ret = enroot_start_once(&context.container, context.shm);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't start container");
+		slurm_error("pyxis: if the image has an unusual entrypoint, try using --no-container-entrypoint");
 		goto fail;
 	}
 
