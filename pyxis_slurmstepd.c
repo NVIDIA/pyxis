@@ -722,28 +722,22 @@ fail:
 	return (rv);
 }
 
-static int enroot_create_start_config(void)
+static int enroot_create_start_config(char (*path)[PATH_MAX])
 {
+	int ret;
 	int fd = -1;
-	int dup_fd = -1;
 	FILE *f = NULL;
 	char template[] = "/tmp/.enroot_config_XXXXXX";
-	int ret;
-	int rv = -1;
 	char *line = NULL;
+	int rv = -1;
 
 	fd = mkstemp(template);
 	if (fd < 0)
 		goto fail;
 
-	dup_fd = dup(fd);
-	if (dup_fd < 0)
-		goto fail;
-
-	f = fdopen(dup_fd, "a+");
+	f = fdopen(fd, "a+");
 	if (f == NULL)
 		goto fail;
-	dup_fd = -1;
 
 	if (context.args->mounts_len > 0) {
 		ret = fprintf(f, "mounts() {\n");
@@ -771,14 +765,15 @@ static int enroot_create_start_config(void)
 		}
 	}
 
-	rv = fd;
+	if (memccpy(*path, template, '\0', sizeof(*path)) == NULL)
+		goto fail;
+
+	rv = 0;
 
 fail:
-	xclose(dup_fd);
 	if (f != NULL)
 		fclose(f);
-	if (rv < 0)
-		xclose(fd);
+	xclose(fd);
 
 	return (rv);
 }
@@ -786,23 +781,16 @@ fail:
 static pid_t enroot_container_start(void)
 {
 	int ret;
-	int conf_fd = -1;
-	char *conf_file = NULL;
+	char conf_file[PATH_MAX] = { 0 };
 	pid_t pid = -1;
 	int status;
 	pid_t rv = -1;
 
 	slurm_spank_log("pyxis: starting container ...");
 
-	conf_fd = enroot_create_start_config();
-	if (conf_fd < 0) {
-		slurm_error("pyxis: couldn't create enroot start configuration script");
-		goto fail;
-	}
-
-	ret = asprintf(&conf_file, "/proc/self/fd/%d", conf_fd);
+	ret = enroot_create_start_config(&conf_file);
 	if (ret < 0) {
-		slurm_error("pyxis: could not allocate memory");
+		slurm_error("pyxis: couldn't create enroot start configuration script");
 		goto fail;
 	}
 
@@ -846,8 +834,8 @@ static pid_t enroot_container_start(void)
 fail:
 	if (rv == -1)
 		enroot_print_last_log();
-	free(conf_file);
-	xclose(conf_fd);
+	if (conf_file[0] != '\0')
+		unlink(conf_file);
 
 	return (rv);
 }
