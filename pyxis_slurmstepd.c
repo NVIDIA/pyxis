@@ -295,7 +295,7 @@ static const char *enroot_want_env[] = {
 	"MELLANOX_MOUNT_DRIVER=",
 	"ENROOT_CONFIG_PATH=",
 	/* Need to limit which SLURM variables are passed, to avoid enroot overriding variables such as SLURM_LOCALID */
-	"SLURM_JOB_ID=", "SLURM_STEP_ID=",
+	"SLURM_JOB_", "SLURM_STEP_",
 	"SLURM_MPI_TYPE=", "SLURM_NODELIST=", "SLURM_NTASKS=",
 	"PMIX_SECURITY_MODE=", "PMIX_GDS_MODULE=", "PMIX_PTL_MODULE=",
 	NULL
