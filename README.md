@@ -95,6 +95,12 @@ $ srun --container-image=centos --container-mounts=/etc/os-release:/host/os-rele
 PRETTY_NAME="Ubuntu 18.04.2 LTS"
 ```
 
+## Advanced Documentation (wiki)
+1. [Home](https://github.com/NVIDIA/pyxis/wiki/Home)
+1. [Installation](https://github.com/NVIDIA/pyxis/wiki/Installation)
+1. [Setup](https://github.com/NVIDIA/pyxis/wiki/Setup)
+1. [Usage](https://github.com/NVIDIA/pyxis/wiki/Usage)
+
 ## Copyright and License
 
 This project is released under the [Apache License Version 2.0](https://github.com/NVIDIA/pyxis/blob/master/LICENSE).
