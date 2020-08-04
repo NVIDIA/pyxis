@@ -3,7 +3,7 @@ Upstream-Name: nvslurm-plugin-pyxis
 Source: https://github.com/NVIDIA/pyxis
 
 Files: *
-Copyright: 2019 NVIDIA CORPORATION
+Copyright: 2019-2020 NVIDIA CORPORATION
 License: Apache-2.0
 
 License: Apache-2.0
