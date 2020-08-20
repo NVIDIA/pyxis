@@ -1,13 +1,22 @@
+#ifdef __aarch64__
+#define __ARCH_WANT_SYSCALL_NO_AT
+#endif
+
 #include <linux/audit.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 
 #include <sys/syscall.h>
+#include <elf.h>
 
 #include "common.h"
 
 #ifndef SECCOMP_FILTER_FLAG_SPEC_ALLOW
 # define SECCOMP_FILTER_FLAG_SPEC_ALLOW 4
+#endif
+
+#ifndef AUDIT_ARCH_AARCH64
+# define AUDIT_ARCH_AARCH64 (EM_AARCH64|__AUDIT_ARCH_64BIT|__AUDIT_ARCH_LE)
 #endif
 
 /*
