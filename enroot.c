@@ -121,3 +121,69 @@ int enroot_exec_wait(uid_t uid, gid_t gid, int log_fd,
 
 	return (0);
 }
+
+void enroot_print_log(int log_fd)
+{
+	int ret;
+	FILE *fp;
+	char *line;
+
+	ret = lseek(log_fd, 0, SEEK_SET);
+	if (ret < 0) {
+		slurm_info("pyxis: couldn't rewind log file: %s", strerror(errno));
+		return;
+	}
+
+	fp = fdopen(log_fd, "r");
+	if (fp == NULL) {
+		slurm_info("pyxis: couldn't open in-memory log for printing: %s", strerror(errno));
+		return;
+	}
+
+	slurm_error("pyxis: printing contents of log file ...");
+	while ((line = get_line_from_file(fp)) != NULL) {
+		slurm_error("pyxis:     %s", line);
+		free(line);
+	}
+
+	return;
+}
+
+FILE *enroot_exec_output(uid_t uid, gid_t gid,
+			 child_cb callback, char *const argv[])
+{
+	int ret;
+	int log_fd = -1;
+	FILE *fp = NULL;
+
+	log_fd = pyxis_memfd_create("enroot-log", MFD_CLOEXEC);
+	if (log_fd < 0) {
+		slurm_error("pyxis: couldn't create in-memory log file: %s", strerror(errno));
+		return (NULL);
+	}
+
+	ret = enroot_exec_wait(uid, gid, log_fd, callback, argv);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't execute enroot command");
+		enroot_print_log(log_fd);
+		goto fail;
+	}
+
+	ret = lseek(log_fd, 0, SEEK_SET);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't rewind log file: %s", strerror(errno));
+		goto fail;
+	}
+
+	fp = fdopen(log_fd, "r");
+	if (fp == NULL) {
+		slurm_error("pyxis: couldn't open in-memory log file: %s", strerror(errno));
+		goto fail;
+	}
+	log_fd = -1;
+
+fail:
+	xclose(log_fd);
+
+	return (fp);
+}

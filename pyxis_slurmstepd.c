@@ -258,35 +258,6 @@ static int enroot_new_log(void)
 	return (context.log_fd);
 }
 
-static void enroot_print_last_log(void)
-{
-	int ret;
-	FILE *fp;
-	char *line;
-
-	ret = lseek(context.log_fd, 0, SEEK_SET);
-	if (ret < 0) {
-		slurm_info("pyxis: couldn't rewind log file: %s", strerror(errno));
-		return;
-	}
-
-	fp = fdopen(context.log_fd, "r");
-	if (fp == NULL) {
-		slurm_info("pyxis: couldn't open in-memory log for printing: %s", strerror(errno));
-		return;
-	}
-	context.log_fd = -1;
-
-	slurm_error("pyxis: printing contents of log file ...");
-	while ((line = get_line_from_file(fp)) != NULL) {
-		slurm_error("pyxis:     %s", line);
-		free(line);
-	}
-
-	fclose(fp);
-	return;
-}
-
 static const char *enroot_want_env[] = {
 	"HOME=",
 	"TERM=",
@@ -352,6 +323,20 @@ static int enroot_exec_wait_ctx(char *const argv[])
 	return enroot_exec_wait(context.job.uid, context.job.gid, enroot_new_log(), enroot_set_env, argv);
 }
 
+static FILE *enroot_exec_output_ctx(char *const argv[])
+{
+	return enroot_exec_output(context.job.uid, context.job.gid, enroot_set_env, argv);
+}
+
+static void enroot_print_log_ctx(void)
+{
+	if (context.log_fd >= 0) {
+		enroot_print_log(context.log_fd);
+		xclose(context.log_fd);
+		context.log_fd = -1;
+	}
+}
+
 /*
  * Returns -1 if an error occurs.
  * Returns 0 and set *pid==-1 if container doesn't exist.
@@ -360,7 +345,6 @@ static int enroot_exec_wait_ctx(char *const argv[])
  */
 static int enroot_container_get(const char *name, pid_t *pid)
 {
-	int ret;
 	FILE *fp;
 	char *line;
 	char *ctr_name, *ctr_pid, *saveptr;
@@ -372,26 +356,11 @@ static int enroot_container_get(const char *name, pid_t *pid)
 
 	*pid = -1;
 
-	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "list", "-f", NULL });
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't get list of existing container filesystems");
-		enroot_print_last_log();
-		return (-1);
-	}
-
-	/* Typically, the log is used to show stderr from failed commands. But here we parse the output. */
-	ret = lseek(context.log_fd, 0, SEEK_SET);
-	if (ret < 0) {
-		slurm_info("pyxis: couldn't rewind log file: %s", strerror(errno));
-		return (-1);
-	}
-
-	fp = fdopen(context.log_fd, "r");
+	fp = enroot_exec_output_ctx((char *const[]){ "enroot", "list", "-f", NULL });
 	if (fp == NULL) {
-		slurm_info("pyxis: couldn't open in-memory log for printing: %s", strerror(errno));
+		slurm_error("pyxis: couldn't get list of existing container filesystems");
 		return (-1);
 	}
-	context.log_fd = -1;
 
 	/* Skip headers line */
 	line = get_line_from_file(fp);
@@ -429,7 +398,7 @@ static int enroot_container_get(const char *name, pid_t *pid)
 
 fail:
 	free(line);
-	fclose(fp);
+	if (fp) fclose(fp);
 	return (rv);
 }
 
@@ -558,7 +527,7 @@ static int enroot_container_create(void)
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", squashfs_path, enroot_uri, NULL });
 		if (ret < 0) {
 			slurm_error("pyxis: failed to import docker image");
-			enroot_print_last_log();
+			enroot_print_log_ctx();
 			goto fail;
 		}
 	}
@@ -568,7 +537,7 @@ static int enroot_container_create(void)
 	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, squashfs_path, NULL });
 	if (ret < 0) {
 		slurm_error("pyxis: failed to create container filesystem");
-		enroot_print_last_log();
+		enroot_print_log_ctx();
 		goto fail;
 	}
 
@@ -766,7 +735,7 @@ static pid_t enroot_container_start(void)
 
 fail:
 	if (rv == -1)
-		enroot_print_last_log();
+		enroot_print_log_ctx();
 	if (conf_file[0] != '\0')
 		unlink(conf_file);
 
@@ -1153,7 +1122,7 @@ static int enroot_container_export(void)
 	slurm_spank_log("pyxis: saving container filesystem at %s", path);
 	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "export", "-f", "-o", path, context.container.name, NULL });
 	if (ret < 0) {
-		enroot_print_last_log();
+		enroot_print_log_ctx();
 		return (-1);
 	}
 
@@ -1181,7 +1150,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
 		if (ret < 0) {
 			slurm_error("pyxis: failed to remove container filesystem");
-			enroot_print_last_log();
+			enroot_print_log_ctx();
 			rv = -1;
 		}
 	}
