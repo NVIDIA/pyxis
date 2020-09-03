@@ -14,6 +14,8 @@ static inline void xclose(int fd)
 	close(fd);
 }
 
+int xasprintf(char **strp, const char *fmt, ...);
+
 #if !defined(MFD_CLOEXEC)
 # define MFD_CLOEXEC 0x0001U
 #endif /* !defined(MFD_CLOEXEC) */

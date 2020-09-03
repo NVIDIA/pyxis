@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "args.h"
+#include "common.h"
 
 static struct plugin_args pyxis_args = {
 	.image = NULL,
@@ -173,9 +174,9 @@ static int add_mount(const char *source, const char *target, const char *flags)
 	int rv = -1;
 
 	if (flags != NULL)
-		ret = asprintf(&entry, "%s %s x-create=auto,rbind,%s", source, target, flags);
+		ret = xasprintf(&entry, "%s %s x-create=auto,rbind,%s", source, target, flags);
 	else
-		ret = asprintf(&entry, "%s %s x-create=auto,rbind", source, target);
+		ret = xasprintf(&entry, "%s %s x-create=auto,rbind", source, target);
 	if (ret < 0) {
 		slurm_error("pyxis: could not allocate memory");
 		goto fail;

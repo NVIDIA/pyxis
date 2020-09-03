@@ -637,7 +637,7 @@ static int enroot_container_create(void)
 		squashfs_path[sizeof(squashfs_path) - 1] = '\0';
 	} else {
 		/* Assume `image` is an enroot URI for a docker image. */
-		ret = asprintf(&enroot_uri, "docker://%s", context.args->image);
+		ret = xasprintf(&enroot_uri, "docker://%s", context.args->image);
 		if (ret < 0)
 			goto fail;
 
@@ -979,7 +979,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		}
 		context.container.name = strdup(context.args->container_name);
 	} else {
-		ret = asprintf(&context.container.name, "%u.%u", context.job.jobid, context.job.stepid);
+		ret = xasprintf(&context.container.name, "%u.%u", context.job.jobid, context.job.stepid);
 		if (ret < 0)
 			goto fail;
 		context.container.temporary = true;
