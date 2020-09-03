@@ -125,11 +125,21 @@ static int job_epilog_fixup(void)
 
 int slurm_spank_job_epilog(spank_t sp, int ac, char **av)
 {
+	struct plugin_config config;
 	spank_err_t rc;
 	uid_t uid;
 	gid_t gid;
 	uint32_t jobid;
 	int ret;
+
+	ret = pyxis_config_parse(&config, ac, av);
+	if (ret < 0) {
+		slurm_error("pyxis: failed to parse configuration");
+		return (-1);
+	}
+
+	if (!config.epilog)
+		return (0);
 
 	ret = job_epilog_fixup();
 	if (ret < 0) {
