@@ -107,9 +107,9 @@ static int job_epilog_fixup(void)
 
 	if (null_fd != STDIN_FILENO) {
 		ret = dup2(null_fd, STDIN_FILENO);
+		xclose(null_fd);
 		if (ret < 0)
 			return (-1);
-		xclose(null_fd);
 	}
 
 	ret = setenv("PATH", "/usr/local/bin:/usr/bin:/bin", 0);
