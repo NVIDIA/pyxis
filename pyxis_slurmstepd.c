@@ -30,6 +30,7 @@
 #include "config.h"
 #include "args.h"
 #include "seccomp_filter.h"
+#include "enroot.h"
 
 struct container {
 	char *name;
@@ -245,7 +246,7 @@ int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 	return (0);
 }
 
-static void enroot_reset_log(void)
+static int enroot_new_log(void)
 {
 	xclose(context.log_fd);
 
@@ -254,7 +255,7 @@ static void enroot_reset_log(void)
 	if (context.log_fd < 0)
 		slurm_info("pyxis: couldn't create in-memory log file: %s", strerror(errno));
 
-	return;
+	return (context.log_fd);
 }
 
 static void enroot_print_last_log(void)
@@ -341,109 +342,14 @@ static int enroot_set_env(void)
 	return (0);
 }
 
-static pid_t enroot_exec(uid_t uid, gid_t gid, char *const argv[])
+static pid_t enroot_exec_ctx(char *const argv[])
 {
-	int ret;
-	int null_fd = -1;
-	int target_fd = -1;
-	pid_t pid;
-	char *argv_str;
-
-	enroot_reset_log();
-
-	argv_str = join_strings(argv, " ");
-	if (argv_str != NULL) {
-		slurm_verbose("pyxis: running \"%s\" ...", argv_str);
-		free(argv_str);
-	}
-
-	pid = fork();
-	if (pid < 0) {
-		slurm_error("pyxis: fork error: %s", strerror(errno));
-		return (-1);
-	}
-
-	if (pid == 0) {
-		null_fd = open(_PATH_DEVNULL, O_RDWR);
-		if (null_fd < 0)
-			_exit(EXIT_FAILURE);
-
-		ret = dup2(null_fd, STDIN_FILENO);
-		if (ret < 0)
-			_exit(EXIT_FAILURE);
-
-		/* Redirect stdout/stderr to the log file or /dev/null */
-		if (context.log_fd >= 0)
-			target_fd = context.log_fd;
-		else
-			target_fd = null_fd;
-
-		ret = dup2(target_fd, STDOUT_FILENO);
-		if (ret < 0)
-			_exit(EXIT_FAILURE);
-
-		ret = dup2(target_fd, STDERR_FILENO);
-		if (ret < 0)
-			_exit(EXIT_FAILURE);
-
-		ret = setregid(gid, gid);
-		if (ret < 0)
-			_exit(EXIT_FAILURE);
-
-		ret = setreuid(uid, uid);
-		if (ret < 0)
-			_exit(EXIT_FAILURE);
-
-		ret = enroot_set_env();
-		if (ret < 0)
-			_exit(EXIT_FAILURE);
-
-		execvpe("enroot", argv, environ);
-
-		_exit(EXIT_FAILURE);
-	}
-
-	return (pid);
+	return enroot_exec(context.job.uid, context.job.gid, enroot_new_log(), enroot_set_env, argv);
 }
 
-static int child_wait(pid_t pid)
+static int enroot_exec_wait_ctx(char *const argv[])
 {
-	int status;
-	int ret;
-
-	ret = waitpid(pid, &status, 0);
-	if (ret < 0) {
-		slurm_error("pyxis: could not wait for child %d: %s", pid, strerror(errno));
-		return (-1);
-	}
-
-	if (WIFSIGNALED(status)) {
-		slurm_error("pyxis: child %d terminated with signal %d", pid, WTERMSIG(status));
-		return (-1);
-	}
-
-	if (WIFEXITED(status) && (status = WEXITSTATUS(status)) != 0) {
-		slurm_error("pyxis: child %d failed with error code: %d", pid, status);
-		return (-1);
-	}
-
-	return (0);
-}
-
-static int enroot_exec_wait(uid_t uid, gid_t gid, char *const argv[])
-{
-	int ret;
-	pid_t child;
-
-	child = enroot_exec(uid, gid, argv);
-	if (child < 0)
-		return (-1);
-
-	ret = child_wait(child);
-	if (ret < 0)
-		return (-1);
-
-	return (0);
+	return enroot_exec_wait(context.job.uid, context.job.gid, enroot_new_log(), enroot_set_env, argv);
 }
 
 /*
@@ -466,7 +372,7 @@ static int enroot_container_get(const char *name, pid_t *pid)
 
 	*pid = -1;
 
-	ret = enroot_exec_wait(context.job.uid, context.job.gid, (char *const[]){ "enroot", "list", "-f", NULL });
+	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "list", "-f", NULL });
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't get list of existing container filesystems");
 		enroot_print_last_log();
@@ -649,8 +555,7 @@ static int enroot_container_create(void)
 
 		slurm_spank_log("pyxis: importing docker image ...");
 
-		ret = enroot_exec_wait(context.job.uid, context.job.gid,
-				       (char *const[]){ "enroot", "import", "--output", squashfs_path, enroot_uri, NULL });
+		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", squashfs_path, enroot_uri, NULL });
 		if (ret < 0) {
 			slurm_error("pyxis: failed to import docker image");
 			enroot_print_last_log();
@@ -660,8 +565,7 @@ static int enroot_container_create(void)
 
 	slurm_spank_log("pyxis: creating container filesystem ...");
 
-	ret = enroot_exec_wait(context.job.uid, context.job.gid,
-			       (char *const[]){ "enroot", "create", "--name", context.container.name, squashfs_path, NULL });
+	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, squashfs_path, NULL });
 	if (ret < 0) {
 		slurm_error("pyxis: failed to create container filesystem");
 		enroot_print_last_log();
@@ -834,9 +738,8 @@ static pid_t enroot_container_start(void)
 	 * This requires a shell inside the container, but we could do the same with a
 	 * small static C program bind-mounted inside the container.
 	*/
-	pid = enroot_exec(context.job.uid, context.job.gid,
-			  (char *const[]){ "enroot", "start", "--conf", conf_file, context.container.name, "sh", "-c",
-					   "kill -STOP $$ ; exit 0", NULL });
+	pid = enroot_exec_ctx((char *const[]){ "enroot", "start", "--conf", conf_file, context.container.name, "sh", "-c",
+					       "kill -STOP $$ ; exit 0", NULL });
 	if (pid < 0) {
 		slurm_error("pyxis: failed to start container");
 		goto fail;
@@ -1248,8 +1151,7 @@ static int enroot_container_export(void)
 	}
 
 	slurm_spank_log("pyxis: saving container filesystem at %s", path);
-	ret = enroot_exec_wait(context.job.uid, context.job.gid,
-			       (char *const[]){ "enroot", "export", "-f", "-o", path, context.container.name, NULL });
+	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "export", "-f", "-o", path, context.container.name, NULL });
 	if (ret < 0) {
 		enroot_print_last_log();
 		return (-1);
@@ -1276,8 +1178,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	if (context.container.temporary) {
 		slurm_spank_log("pyxis: removing container filesystem ...");
 
-		ret = enroot_exec_wait(context.job.uid, context.job.gid,
-				(char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
+		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
 		if (ret < 0) {
 			slurm_error("pyxis: failed to remove container filesystem");
 			enroot_print_last_log();
