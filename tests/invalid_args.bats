@@ -24,7 +24,7 @@ load ./common
 }
 
 @test "invalid arg: --container-name without --container-image" {
-    run_srun_unchecked --container-name=pyxis-args-test true
+    run_srun_unchecked --container-name=args-test true
     [ "${status}" -ne 0 ]
 }
 

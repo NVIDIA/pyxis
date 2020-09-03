@@ -110,6 +110,13 @@ This project is released under the [Apache License Version 2.0](https://github.c
 * Please let us know by [filing a new issue](https://github.com/NVIDIA/pyxis/issues/new)
 * Check [CONTRIBUTING](CONTRIBUTING.md) and then open a [pull request](https://help.github.com/articles/using-pull-requests/)
 
+## Running tests
+Integration tests can be ran with [bats](https://github.com/bats-core/bats-core) from within a Slurm job allocation:
+```console
+$ srun --ntasks 1 --ntasks-per-node 4 bats tests
+```
+Some tests assume a specific enroot configuration (such as PMIx/PyTorch hooks), so they might not pass on all systems.
+
 ## Reporting Security Issues
 
 When reporting a security issue, do not create an issue or file a pull request.  

@@ -943,6 +943,7 @@ static int shm_destroy(struct shared_memory *shm)
 int slurm_spank_user_init(spank_t sp, int ac, char **av)
 {
 	int ret;
+	char *container_name = NULL;
 	pid_t pid;
 	int rv = -1;
 
@@ -958,7 +959,11 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		goto fail;
 
 	if (context.args->container_name != NULL) {
-		ret = enroot_container_get(context.args->container_name, &pid);
+		ret = xasprintf(&container_name, "pyxis_%u_%s", context.job.jobid, context.args->container_name);
+		if (ret < 0)
+			goto fail;
+
+		ret = enroot_container_get(container_name, &pid);
 		if (ret < 0) {
 			slurm_error("pyxis: couldn't get list of containers");
 			goto fail;
@@ -977,9 +982,10 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 					context.args->container_name);
 			goto fail;
 		}
-		context.container.name = strdup(context.args->container_name);
+		context.container.name = container_name;
+		container_name = NULL;
 	} else {
-		ret = xasprintf(&context.container.name, "%u.%u", context.job.jobid, context.job.stepid);
+		ret = xasprintf(&context.container.name, "pyxis_%u.%u", context.job.jobid, context.job.stepid);
 		if (ret < 0)
 			goto fail;
 		context.container.temporary = true;
@@ -1001,6 +1007,8 @@ fail:
 	if (rv != 0)
 		slurm_debug("pyxis: user_init() failed with rc=%d; postponing error for now, will report later", rv);
 	context.user_init_rv = rv;
+	free(container_name);
+
 	return (0);
 }
 

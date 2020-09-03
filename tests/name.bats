@@ -3,13 +3,13 @@
 load ./common
 
 function setup() {
-    enroot remove -f pyxis-name-test >/dev/null 2>&1 || true
-    enroot remove -f pyxis-name-test2 >/dev/null 2>&1 || true
+    enroot remove -f pyxis_${SLURM_JOB_ID}_name-test >/dev/null 2>&1 || true
+    enroot remove -f pyxis_${SLURM_JOB_ID}_name-test2 >/dev/null 2>&1 || true
 }
 
 function teardown() {
-    enroot remove -f pyxis-name-test >/dev/null 2>&1 || true
-    enroot remove -f pyxis-name-test2 >/dev/null 2>&1 || true
+    enroot remove -f pyxis_${SLURM_JOB_ID}_name-test >/dev/null 2>&1 || true
+    enroot remove -f pyxis_${SLURM_JOB_ID}_name-test2 >/dev/null 2>&1 || true
 }
 
 @test "unnamed container cleanup" {
@@ -26,22 +26,22 @@ function teardown() {
 
 @test "named container persistence" {
     run_srun --container-image=ubuntu:18.04 bash -c '! which file'
-    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
-    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test which file
-    run_srun --container-name=pyxis-name-test which file
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test which file
+    run_srun --container-name=name-test which file
 
     run_srun --container-image=ubuntu:18.04 bash -c '! which file'
-    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test2 true
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test2 true
     run_srun --container-image=ubuntu:18.04 bash -c '! which file'
 }
 
 @test "named container manual remove" {
-    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
-    run_srun --container-name=pyxis-name-test which file
-    run_enroot remove -f pyxis-name-test
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
+    run_srun --container-name=name-test which file
+    run_enroot remove -f pyxis_${SLURM_JOB_ID}_name-test
 
-    run_srun_unchecked --container-name=pyxis-name-test which file
+    run_srun_unchecked --container-name=name-test which file
     [ "${status}" -ne 0 ]
-    run_srun --container-image=ubuntu:18.04 --container-name=pyxis-name-test bash -c '! which file'
-    run_srun --container-name=pyxis-name-test bash -c '! which file'
+    run_srun --container-image=ubuntu:18.04 --container-name=name-test bash -c '! which file'
+    run_srun --container-name=name-test bash -c '! which file'
 }
