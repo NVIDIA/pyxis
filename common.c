@@ -18,8 +18,8 @@ int xasprintf(char **strp, const char *fmt, ...)
 		return (-1);
 
 	va_start(ap, fmt);
-        ret = vasprintf(strp, fmt, ap);
-        va_end(ap);
+	ret = vasprintf(strp, fmt, ap);
+	va_end(ap);
 
 	/*
 	 * man 3 asprintf:

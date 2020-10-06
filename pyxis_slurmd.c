@@ -80,7 +80,7 @@ static int pyxis_container_cleanup(uid_t uid, gid_t gid, uint32_t jobid)
 		}
 
 		free(name);
-	        name = NULL;
+		name = NULL;
 	}
 
 	rv = 0;
