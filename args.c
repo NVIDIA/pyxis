@@ -171,12 +171,23 @@ static int add_mount(const char *source, const char *target, const char *flags)
 {
 	int ret;
 	char *entry = NULL;
+	const char *default_flags;
 	int rv = -1;
 
+	if (strspn(source, "./") > 0) {
+		default_flags = "x-create=auto,rbind";
+	} else {
+		if (strcmp(source, "tmpfs") != 0) {
+			slurm_error("pyxis: mount source must be a relative path, an absolute path, or \"tmpfs\"");
+			goto fail;
+		}
+		default_flags = "x-create=dir";
+	}
+
 	if (flags != NULL)
-		ret = xasprintf(&entry, "%s %s x-create=auto,rbind,%s", source, target, flags);
+		ret = xasprintf(&entry, "%s %s %s,%s", source, target, default_flags, flags);
 	else
-		ret = xasprintf(&entry, "%s %s x-create=auto,rbind", source, target);
+		ret = xasprintf(&entry, "%s %s %s", source, target, default_flags);
 	if (ret < 0) {
 		slurm_error("pyxis: could not allocate memory");
 		goto fail;

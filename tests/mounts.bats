@@ -58,3 +58,18 @@ load ./common
     run_srun --container-image=ubuntu:18.04 bash -c '! findmnt /var/lib'
     run_srun --container-mounts=/var/lib --container-image=ubuntu:18.04 findmnt /var/lib
 }
+
+@test "--container-mounts tmpfs" {
+    run_srun --container-mounts=tmpfs:/mytmpfs --container-image=ubuntu:20.04 findmnt -n -o fstype /mytmpfs
+    [ "${lines[-1]}" == "tmpfs" ]
+}
+
+@test "--container-mounts tmpfs huge pages" {
+    run_srun --container-mounts=tmpfs:/mytmpfs:huge=within_size --container-image=ubuntu:20.04 findmnt -n -o options /mytmpfs
+    grep -q 'huge=within_size' <<< "${output}"
+}
+
+@test "--container-mounts devpts" {
+    run_srun_unchecked --container-mounts=devpts:/mydevpts:ro --container-image=ubuntu:18.04 findmnt /mydevpts
+    [ "${status}" -ne 0 ]
+}
