@@ -832,7 +832,10 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		goto fail;
 
 	if (context.args->container_name != NULL) {
-		ret = xasprintf(&container_name, "pyxis_%u_%s", context.job.jobid, context.args->container_name);
+		if (context.config.container_scope == SCOPE_JOB)
+			ret = xasprintf(&container_name, "pyxis_%u_%s", context.job.jobid, context.args->container_name);
+		else
+			ret = xasprintf(&container_name, "pyxis_%s", context.args->container_name);
 		if (ret < 0)
 			goto fail;
 

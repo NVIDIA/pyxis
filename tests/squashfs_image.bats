@@ -4,12 +4,12 @@ load ./common
 
 function setup() {
     rm -f *.sqsh || true
-    enroot remove -f pyxis_${SLURM_JOB_ID}_squashfs-test || true
+    enroot remove -f pyxis_squashfs-test pyxis_${SLURM_JOB_ID}_squashfs-test || true
 }
 
 function teardown() {
     rm -f *.sqsh || true
-    enroot remove -f pyxis_${SLURM_JOB_ID}_squashfs-test || true
+    enroot remove -f pyxis_squashfs-test pyxis_${SLURM_JOB_ID}_squashfs-test || true
 }
 
 @test "Ubuntu 18.04 squashfs" {
@@ -21,7 +21,7 @@ function teardown() {
     run_enroot import -o ubuntu.sqsh docker://ubuntu:18.04
     run_srun --container-image=./ubuntu.sqsh --container-name=squashfs-test --container-remap-root sh -c 'apt-get update && apt-get install -y file'
     run_srun --container-name=squashfs-test sh -c 'echo pyxis > /test'
-    run_enroot export -o ubuntu-modified.sqsh pyxis_${SLURM_JOB_ID}_squashfs-test
+    run_enroot export -o ubuntu-modified.sqsh pyxis_squashfs-test || run_enroot export -o ubuntu-modified.sqsh pyxis_${SLURM_JOB_ID}_squashfs-test
     run_srun --container-image=./ubuntu-modified.sqsh which file
     run_srun --container-image=./ubuntu-modified.sqsh cat /test
     [ "${lines[-1]}" == "pyxis" ]

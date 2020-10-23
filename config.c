@@ -34,7 +34,7 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	strcpy(config->runtime_path, "/run/pyxis");
 	config->remap_root = true;
 	config->execute_entrypoint = false;
-	config->epilog = true;
+	config->container_scope = SCOPE_JOB;
 
 	for (int i = 0; i < ac; ++i) {
 		if (strncmp("runtime_path=", av[i], 13) == 0) {
@@ -59,14 +59,16 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 				return (-1);
 			}
 			config->execute_entrypoint = ret;
-		} else if (strncmp("epilog=", av[i], 7) == 0) {
-			optarg = av[i] + 7;
-			ret = parse_bool(optarg);
-			if (ret < 0) {
-				slurm_error("pyxis: epilog: invalid value: %s", optarg);
+		} else if (strncmp("container_scope=", av[i], 16) == 0) {
+			optarg = av[i] + 16;
+			if (strcmp(optarg, "job") == 0)
+				config->container_scope = SCOPE_JOB;
+			else if (strcmp(optarg, "global") == 0)
+				config->container_scope = SCOPE_GLOBAL;
+			else {
+				slurm_error("pyxis: container_scope: invalid value: %s", optarg);
 				return (-1);
 			}
-			config->epilog = ret;
 		} else {
 			slurm_error("pyxis: unknown configuration option: %s", av[i]);
 			return (-1);

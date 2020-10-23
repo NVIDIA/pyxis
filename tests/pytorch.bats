@@ -3,11 +3,11 @@
 load ./common
 
 function setup() {
-    enroot remove -f pyxis_${SLURM_JOB_ID}_pytorch-test || true
+    enroot remove -f pyxis_pytorch-test pyxis_${SLURM_JOB_ID}_pytorch-test || true
 }
 
 function teardown() {
-    enroot remove -f pyxis_${SLURM_JOB_ID}_pytorch-test || true
+    enroot remove -f pyxis_pytorch-test pyxis_${SLURM_JOB_ID}_pytorch-test || true
 }
 
 @test "PyTorch environment variables" {

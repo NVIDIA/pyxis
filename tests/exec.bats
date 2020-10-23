@@ -3,11 +3,11 @@
 load ./common
 
 function setup() {
-    enroot remove -f pyxis_${SLURM_JOB_ID}_exec-test || true
+    enroot remove -f pyxis_exec-test pyxis_${SLURM_JOB_ID}_exec-test || true
 }
 
 function teardown() {
-    enroot remove -f pyxis_${SLURM_JOB_ID}_exec-test || true
+    enroot remove -f pyxis_exec-test pyxis_${SLURM_JOB_ID}_exec-test || true
 }
 
 @test "enroot exec" {
@@ -15,7 +15,7 @@ function teardown() {
     run_srun --container-name=exec-test sleep 30s &
 
     sleep 5s # FIXME...
-    pid=$(enroot list -f | awk -vNAME=pyxis_${SLURM_JOB_ID}_exec-test '($1 == NAME) { print $2 }')
+    pid=$(enroot list -f | awk -vNAME1=pyxis_exec-test -vNAME2=pyxis_${SLURM_JOB_ID}_exec-test '($1 == NAME1 || $1 == NAME2) { print $2 }')
     logf "pid: %s" "${pid}"
     [ "${pid}" -gt "1" ]
     run_enroot exec "${pid}" true

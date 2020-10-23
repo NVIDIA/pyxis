@@ -138,7 +138,7 @@ int slurm_spank_job_epilog(spank_t sp, int ac, char **av)
 		return (-1);
 	}
 
-	if (!config.epilog)
+	if (config.container_scope != SCOPE_JOB)
 		return (0);
 
 	ret = job_epilog_fixup();

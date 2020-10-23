@@ -3,11 +3,11 @@
 load ./common
 
 function setup() {
-    enroot remove -f pyxis_${SLURM_JOB_ID}_nginx-test >/dev/null 2>&1 || true
+    enroot remove -f pyxis_nginx-test pyxis_${SLURM_JOB_ID}_nginx-test >/dev/null 2>&1 || true
 }
 
 function teardown() {
-    enroot remove -f pyxis_${SLURM_JOB_ID}_nginx-test >/dev/null 2>&1 || true
+    enroot remove -f pyxis_nginx-test pyxis_${SLURM_JOB_ID}_nginx-test >/dev/null 2>&1 || true
 }
 
 @test "--container-entrypoint: jrottenberg/ffmpeg" {
