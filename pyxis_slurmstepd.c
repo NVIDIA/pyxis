@@ -49,7 +49,6 @@ struct job_info {
 	gid_t gid;
 	uint32_t jobid;
 	uint32_t stepid;
-	uint32_t taskid;
 	uint32_t local_task_count;
 	char **environ;
 	char cwd[PATH_MAX];
@@ -57,8 +56,7 @@ struct job_info {
 
 struct shared_memory {
 	pthread_mutex_t mutex;
-	pthread_cond_t cond;
-	bool initialized;
+	uint32_t init_tasks;
 	uint32_t started_tasks;
 	pid_t pid;
 };
@@ -79,7 +77,7 @@ static struct plugin_context context = {
 	.log_fd = -1,
 	.config = { .runtime_path = { 0 } },
 	.args = NULL,
-	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .taskid = -1, .environ = NULL, .cwd = { 0 } },
+	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL, .cwd = { 0 } },
 	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
@@ -767,7 +765,6 @@ static struct shared_memory *shm_init(void)
 {
 	struct shared_memory *shm = NULL;
 	pthread_mutexattr_t mutex_attr;
-	pthread_condattr_t cond_attr;
 	int ret;
 
 	shm = mmap(0, sizeof(*shm), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -785,24 +782,10 @@ static struct shared_memory *shm_init(void)
 		goto fail;
 
 	ret = pthread_mutex_init(&shm->mutex, &mutex_attr);
-	pthread_mutexattr_destroy(&mutex_attr);
 	if (ret < 0)
 		goto fail;
 
-	ret = pthread_condattr_init(&cond_attr);
-	if (ret < 0)
-		goto fail;
-
-	ret = pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED);
-	if (ret < 0)
-		goto fail;
-
-	ret = pthread_cond_init(&shm->cond, &cond_attr);
-	pthread_condattr_destroy(&cond_attr);
-	if (ret < 0)
-		goto fail;
-
-	shm->initialized = false;
+	shm->init_tasks = 0;
 	shm->started_tasks = 0;
 	shm->pid = -1;
 
@@ -822,10 +805,6 @@ static int shm_destroy(struct shared_memory *shm)
 		return (0);
 
 	ret = pthread_mutex_destroy(&shm->mutex);
-	if (ret < 0)
-		return (-1);
-
-	ret = pthread_cond_destroy(&shm->cond);
 	if (ret < 0)
 		return (-1);
 
@@ -975,40 +954,35 @@ static int pytorch_setup(spank_t sp)
 
 static int enroot_start_once(struct container *container, struct shared_memory *shm)
 {
-	bool created = false;
-
-	if (container->reuse_pid)
-		goto done;
-
-	if (container->reuse_rootfs)
-		created = true;
+	int ret;
+	int rv = -1;
 
 	pthread_mutex_lock(&shm->mutex);
 
-	/* Local rank 0 will create and/or start the enroot container */
-	if (context.job.taskid == 0) {
-		if (!created) {
-			if (enroot_container_create() == 0)
-				created = true;
-		}
+	shm->init_tasks += 1;
 
-		if (created)
+	/* The first task will create and/or start the enroot container */
+	if (shm->init_tasks == 1) {
+		if (!container->reuse_pid) {
+			if (!container->reuse_rootfs) {
+				ret = enroot_container_create();
+				if (ret < 0)
+					goto fail;
+			}
+
 			shm->pid = enroot_container_start();
-
-		shm->initialized = true;
-		pthread_cond_broadcast(&shm->cond);
-	} else {
-		while (!shm->initialized)
-			pthread_cond_wait(&shm->cond, &shm->mutex);
+		}
 	}
 
+	if (shm->pid < 0)
+		goto fail;
+
+	rv = 0;
+
+fail:
 	pthread_mutex_unlock(&shm->mutex);
 
-done:
-	if (shm->pid < 0)
-		return (-1);
-
-	return (0);
+	return (rv);
 }
 
 static int enroot_stop_once(struct container *container, struct shared_memory *shm)
@@ -1041,7 +1015,6 @@ fail:
 int slurm_spank_task_init(spank_t sp, int ac, char **av)
 {
 	int ret;
-	spank_err_t spank_ret;
 	int rv = -1;
 
 	if (!context.enabled)
@@ -1054,12 +1027,6 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	ret = job_get_env(sp, &context.job);
 	if (ret < 0)
 		goto fail;
-
-	spank_ret = spank_get_item(sp, S_TASK_ID, &context.job.taskid);
-	if (spank_ret != ESPANK_SUCCESS) {
-		slurm_error("pyxis: couldn't get job task ID: %s", spank_strerror(spank_ret));
-		goto fail;
-	}
 
 	ret = enroot_start_once(&context.container, context.shm);
 	if (ret < 0) {
