@@ -43,7 +43,7 @@ clean:
 	rm -rf $(C_OBJS) $(DEPS) $(PLUGIN)
 
 orig: clean
-	tar -caf ../nvslurm-plugin-pyxis_0.9.0.orig.tar.xz --owner=root --group=root --exclude=.git .
+	tar -caf ../nvslurm-plugin-pyxis_0.9.1.orig.tar.xz --owner=root --group=root --exclude=.git .
 
 deb: clean
 	debuild -us -uc -G -i -tc
