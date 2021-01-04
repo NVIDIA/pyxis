@@ -857,7 +857,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			context.container.reuse_rootfs = true;
 		} else if (context.args->image == NULL) {
 			slurm_error("pyxis: error: a container with name \"%s\" does not exist, and --container-image is not set",
-				    context.args->container_name);
+				    container_name);
 			goto fail;
 		}
 		context.container.name = container_name;
