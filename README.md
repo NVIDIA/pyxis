@@ -18,17 +18,27 @@ A pyxis is an [ancient small box or container](https://en.wikipedia.org/wiki/Pyx
 ## Installation
 Pyxis requires the [enroot](https://github.com/nvidia/enroot) container utility (version `3.1.0`) to be installed.
 
+#### With `make install`
 ```console
-$ # Option 1: quick install from sources
 $ sudo make install
 $ sudo ln -s /usr/local/share/pyxis/pyxis.conf /etc/slurm-llnl/plugstack.conf.d/pyxis.conf
 $ sudo systemctl restart slurmd
+```
 
-$ # Option 2: generate a deb package and install it
+#### With a deb package
+```console
 $ make orig
 $ make deb
 $ sudo dpkg -i ../nvslurm-plugin-pyxis_*_amd64.deb
 $ sudo ln -s /usr/share/pyxis/pyxis.conf /etc/slurm-llnl/plugstack.conf.d/pyxis.conf
+$ sudo systemctl restart slurmd
+```
+
+#### With a rpm package
+```console
+$ make rpm
+$ sudo rpm -i x86_64/nvslurm-plugin-pyxis-*-1.el7.x86_64.rpm
+$ sudo ln -s /usr/share/pyxis/pyxis.conf /etc/slurm/plugstack.conf.d/pyxis.conf
 $ sudo systemctl restart slurmd
 ```
 
