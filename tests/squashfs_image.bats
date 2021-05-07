@@ -4,12 +4,12 @@ load ./common
 
 function setup() {
     rm -f *.sqsh || true
-    enroot remove -f pyxis_squashfs-test pyxis_${SLURM_JOB_ID}_squashfs-test || true
+    enroot_cleanup squashfs-test || true
 }
 
 function teardown() {
     rm -f *.sqsh || true
-    enroot remove -f pyxis_squashfs-test pyxis_${SLURM_JOB_ID}_squashfs-test || true
+    enroot_cleanup squashfs-test || true
 }
 
 @test "Ubuntu 18.04 squashfs" {

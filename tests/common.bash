@@ -31,3 +31,9 @@ function run_srun() {
     run_srun_unchecked "$@"
     [ "${status}" -eq 0 ]
 }
+
+function enroot_cleanup() {
+    for name in "$@"; do
+	{ enroot remove -f pyxis_${name} || enroot remove -f pyxis_${SLURM_JOB_ID}_${name}; } >/dev/null 2>&1
+    done
+}

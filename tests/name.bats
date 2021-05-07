@@ -3,13 +3,11 @@
 load ./common
 
 function setup() {
-    enroot remove -f pyxis_name-test pyxis_${SLURM_JOB_ID}_name-test >/dev/null 2>&1 || true
-    enroot remove -f pyxis_name-test2 pyxis_${SLURM_JOB_ID}_name-test2 >/dev/null 2>&1 || true
+    enroot_cleanup name-test name-test2 || true
 }
 
 function teardown() {
-    enroot remove -f pyxis_name-test pyxis_${SLURM_JOB_ID}_name-test >/dev/null 2>&1 || true
-    enroot remove -f pyxis_name-test2 pyxis_${SLURM_JOB_ID}_name-test2 >/dev/null 2>&1 || true
+    enroot_cleanup name-test name-test2 || true
 }
 
 @test "unnamed container cleanup" {

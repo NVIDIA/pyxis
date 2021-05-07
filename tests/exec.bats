@@ -3,11 +3,11 @@
 load ./common
 
 function setup() {
-    enroot remove -f pyxis_exec-test pyxis_${SLURM_JOB_ID}_exec-test || true
+    enroot_cleanup exec-test || true
 }
 
 function teardown() {
-    enroot remove -f pyxis_exec-test pyxis_${SLURM_JOB_ID}_exec-test || true
+    enroot_cleanup exec-test || true
 }
 
 @test "enroot exec" {

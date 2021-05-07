@@ -3,11 +3,11 @@
 load ./common
 
 function setup() {
-    enroot remove -f pyxis_sshd pyxis_${SLURM_JOB_ID}_sshd >/dev/null 2>&1 || true
+    enroot_cleanup sshd || true
 }
 
 function teardown() {
-    enroot remove -f pyxis_sshd pyxis_${SLURM_JOB_ID}_sshd >/dev/null 2>&1 || true
+    enroot_cleanup sshd || true
 }
 
 # From https://github.com/NVIDIA/pyxis/issues/44
