@@ -116,7 +116,7 @@ static int job_epilog_fixup(void)
 	if (ret < 0)
 		return (-1);
 
-	ret = setenv("HOME", "/dev/null", 1);
+	ret = unsetenv("HOME");
 	if (ret < 0)
 		return (-1);
 
