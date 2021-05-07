@@ -123,7 +123,7 @@ This project is released under the [Apache License Version 2.0](https://github.c
 ## Running tests
 Integration tests can be ran with [bats](https://github.com/bats-core/bats-core) from within a Slurm job allocation:
 ```console
-$ srun --ntasks 1 --ntasks-per-node 4 bats tests
+$ salloc --overcommit bats tests
 ```
 Some tests assume a specific enroot configuration (such as PMIx/PyTorch hooks), so they might not pass on all systems.
 
