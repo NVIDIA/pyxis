@@ -22,6 +22,10 @@ load ./common
     run_srun --container-remap-root --container-image=ubuntu:18.04 grep 'Seccomp:[[:space:]]\+2' /proc/self/status
 }
 
+@test "--no-container-remap-root seccomp" {
+    run_srun --no-container-remap-root --container-image=ubuntu:18.04 grep 'Seccomp:[[:space:]]\+2' /proc/self/status
+}
+
 @test "apt-get install file" {
     run_srun --container-remap-root --container-image=ubuntu:18.04 bash -c 'apt-get update && apt-get install -y --no-install-recommends file'
 }
