@@ -28,3 +28,11 @@ function teardown() {
     sleep 5s # FIXME...
     run_srun --container-name=exec-test findmnt /mymnt
 }
+
+@test "attach to running container after directory change" {
+    run_srun --container-image=ubuntu:20.04 --container-name=exec-test bash -c "cd /var && sleep 30s" &
+
+    sleep 5s
+    run_srun --container-name=exec-test pwd
+    [ "${lines[-1]}" == "/" ]
+}

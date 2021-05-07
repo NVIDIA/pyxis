@@ -22,3 +22,15 @@ function teardown() {
 
     wait
 }
+
+# From https://github.com/NVIDIA/pyxis/issues/45
+@test "attach to container running sshd" {
+    run_srun --container-image ubuntu:20.04 --container-name=sshd --container-remap-root bash -c 'apt-get update && apt-get install -y --no-install-recommends openssh-server'
+    # Can't use timeout(1) here since we want the PID of sshd to appear in "enroot list -f"
+    run_srun --container-name=sshd --no-container-remap-root -t 1 --signal TERM@30 /usr/sbin/sshd -d -p 2222 &
+
+    sleep 3s
+    run_srun --container-name=sshd true
+
+    wait
+}

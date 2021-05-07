@@ -36,7 +36,7 @@ struct container {
 	char *name;
 	char *save_path;
 	bool reuse_rootfs;
-	bool reuse_pid;
+	bool reuse_ns;
 	bool temporary;
 	int userns_fd;
 	int mntns_fd;
@@ -59,6 +59,7 @@ struct shared_memory {
 	uint32_t init_tasks;
 	uint32_t started_tasks;
 	pid_t pid;
+	pid_t ns_pid;
 };
 
 struct plugin_context {
@@ -78,7 +79,7 @@ static struct plugin_context context = {
 	.config = { .runtime_path = { 0 } },
 	.args = NULL,
 	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL, .cwd = { 0 } },
-	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_pid = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
+	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_ns = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
 	.user_init_rv = 0,
 };
 
@@ -473,7 +474,7 @@ static int spank_import_container_env(spank_t sp, pid_t pid)
 
 	ret = read_proc_environ(pid, &proc_environ, &size);
 	if (ret < 0) {
-		slurm_error("pyxis: couldn't read /proc/<pid>/environ");
+		slurm_error("pyxis: couldn't read /proc/%d/environ", pid);
 		goto fail;
 	}
 
@@ -557,7 +558,7 @@ fail:
 	return (rv);
 }
 
-static int container_get_fds(pid_t pid, struct container *container)
+static int container_get_namespaces(pid_t pid, struct container *container)
 {
 	int ret;
 	char path[PATH_MAX];
@@ -594,20 +595,28 @@ static int container_get_fds(pid_t pid, struct container *container)
 		goto fail;
 	}
 
-	ret = snprintf(path, sizeof(path), "/proc/%d/cwd", pid);
-	if (ret < 0 || ret >= sizeof(path))
-		goto fail;
-
-	container->cwd_fd = open(path, O_RDONLY | O_CLOEXEC);
-	if (container->cwd_fd < 0) {
-		slurm_error("pyxis: couldn't open cwd fd");
-		goto fail;
-	}
-
 	rv = 0;
 
 fail:
 	return (rv);
+}
+
+static int container_get_cwd(pid_t pid, struct container *container)
+{
+	int ret;
+	char path[PATH_MAX];
+
+	ret = snprintf(path, sizeof(path), "/proc/%d/cwd", pid);
+	if (ret < 0 || ret >= sizeof(path))
+		return (-1);
+
+	container->cwd_fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (container->cwd_fd < 0) {
+		slurm_error("pyxis: couldn't open cwd fd");
+		return (-1);
+	}
+
+	return (0);
 }
 
 static int enroot_create_start_config(char (*path)[PATH_MAX])
@@ -788,6 +797,7 @@ static struct shared_memory *shm_init(void)
 	shm->init_tasks = 0;
 	shm->started_tasks = 0;
 	shm->pid = -1;
+	shm->ns_pid = -1;
 
 	return shm;
 
@@ -848,9 +858,9 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		}
 
 		if (pid > 0) {
-			slurm_info("pyxis: reusing existing container PID");
-			context.shm->pid = pid;
-			context.container.reuse_pid = true;
+			slurm_info("pyxis: reusing existing container namespaces");
+			context.shm->ns_pid = pid;
+			context.container.reuse_ns = true;
 			context.container.reuse_rootfs = true;
 		} else if (pid == 0) {
 			slurm_info("pyxis: reusing existing container filesystem");
@@ -963,18 +973,18 @@ static int enroot_start_once(struct container *container, struct shared_memory *
 
 	/* The first task will create and/or start the enroot container */
 	if (shm->init_tasks == 1) {
-		if (!container->reuse_pid) {
-			if (!container->reuse_rootfs) {
-				ret = enroot_container_create();
-				if (ret < 0)
-					goto fail;
-			}
-
-			shm->pid = enroot_container_start();
+		if (!container->reuse_rootfs) {
+			ret = enroot_container_create();
+			if (ret < 0)
+				goto fail;
 		}
+		shm->pid = enroot_container_start();
+
+		if (!container->reuse_ns)
+			shm->ns_pid = shm->pid;
 	}
 
-	if (shm->pid < 0)
+	if (shm->pid < 0 || shm->ns_pid < 0)
 		goto fail;
 
 	rv = 0;
@@ -996,12 +1006,12 @@ static int enroot_stop_once(struct container *container, struct shared_memory *s
 
 	/* Last task to start can stop the container process. */
 	if (context.shm->started_tasks == context.job.local_task_count) {
-		if (!container->reuse_pid) {
-			ret = enroot_container_stop(shm->pid);
-			if (ret < 0)
-				goto fail;
-		}
+		ret = enroot_container_stop(shm->pid);
+		if (ret < 0)
+			goto fail;
+
 		shm->pid = -1;
+		shm->ns_pid = -1;
 	}
 
 	rv = 0;
@@ -1035,9 +1045,15 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		goto fail;
 	}
 
-	ret = container_get_fds(context.shm->pid, &context.container);
+	ret = container_get_namespaces(context.shm->ns_pid, &context.container);
 	if (ret < 0) {
-		slurm_error("pyxis: couldn't get container attributes");
+		slurm_error("pyxis: couldn't get container namespaces");
+		goto fail;
+	}
+
+	ret = container_get_cwd(context.shm->pid, &context.container);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't get container directory");
 		goto fail;
 	}
 
