@@ -73,3 +73,8 @@ load ./common
     run_srun_unchecked --container-mounts=devpts:/mydevpts:ro --container-image=ubuntu:18.04 findmnt /mydevpts
     [ "${status}" -ne 0 ]
 }
+
+@test "--container-mounts invalid target" {
+    run_srun_unchecked --container-mounts=/tmp:mnt:ro --container-image=ubuntu:18.04 findmnt /mnt
+    [ "${status}" -ne 0 ]
+}

@@ -641,7 +641,7 @@ static int enroot_create_start_config(char (*path)[PATH_MAX])
 		if (ret < 0)
 			goto fail;
 
-		/* bind mount entries */
+		/* mount entries */
 		for (int i = 0; i < context.args->mounts_len; ++i) {
 			ret = fprintf(f, "\techo \"%s\"\n", context.args->mounts[i]);
 			if (ret < 0)

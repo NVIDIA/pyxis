@@ -184,6 +184,11 @@ static int add_mount(const char *source, const char *target, const char *flags)
 		default_flags = "x-create=dir";
 	}
 
+	if (strspn(target, "./") == 0) {
+		slurm_error("pyxis: mount target must be a relative path or an absolute path");
+		goto fail;
+	}
+
 	if (flags != NULL)
 		ret = xasprintf(&entry, "%s %s %s,%s", source, target, default_flags, flags);
 	else
