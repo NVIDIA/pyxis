@@ -177,11 +177,14 @@ static int add_mount(const char *source, const char *target, const char *flags)
 	if (strspn(source, "./") > 0) {
 		default_flags = "x-create=auto,rbind";
 	} else {
-		if (strcmp(source, "tmpfs") != 0) {
-			slurm_error("pyxis: mount source must be a relative path, an absolute path, or \"tmpfs\"");
+		if (strcmp(source, "tmpfs") == 0) {
+			default_flags = "x-create=dir";
+		} else if (strcmp(source, "umount") == 0) {
+			default_flags = "x-detach";
+		} else {
+			slurm_error("pyxis: mount source must be a relative path, an absolute path, \"tmpfs\" or \"umount\"");
 			goto fail;
 		}
-		default_flags = "x-create=dir";
 	}
 
 	if (strspn(target, "./") == 0) {

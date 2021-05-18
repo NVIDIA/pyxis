@@ -78,3 +78,8 @@ load ./common
     run_srun_unchecked --container-mounts=/tmp:mnt:ro --container-image=ubuntu:18.04 findmnt /mnt
     [ "${status}" -ne 0 ]
 }
+
+@test "--container-mounts umount" {
+    run_srun --container-mount-home --container-remap-root --container-image=ubuntu:20.04 findmnt /root
+    run_srun --container-mount-home --container-remap-root --container-mounts umount:/root --container-image=ubuntu:20.04 bash -c '! findmnt /root'
+}
