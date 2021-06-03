@@ -259,34 +259,62 @@ static int enroot_new_log(void)
 	return (context.log_fd);
 }
 
-static const char *enroot_want_env[] = {
-	"HOME=",
-	"TERM=",
-	"NVIDIA_VISIBLE_DEVICES=",
-	"NVIDIA_DRIVER_CAPABILITIES=",
-	"NVIDIA_DISABLE_REQUIRE=",
-	"NVIDIA_MIG_CONFIG_DEVICES=",
-	"NVIDIA_MIG_MONITOR_DEVICES=",
-	"MELLANOX_VISIBLE_DEVICES=",
-	"MELLANOX_MOUNT_DRIVER=",
-	"ENROOT_CONFIG_PATH=",
-	/* Need to limit which SLURM variables are passed, to avoid enroot overriding variables such as SLURM_LOCALID */
-	"SLURM_JOB_", "SLURM_STEP_",
-	"SLURM_MPI_TYPE=", "SLURM_NODELIST=", "SLURM_NTASKS=",
-	"PMIX_SECURITY_MODE=", "PMIX_GDS_MODULE=", "PMIX_PTL_MODULE=",
-	NULL
+/*
+ * List of environment variables that should not be passed from the Slurm job to enroot.
+ */
+
+#define PYXIS_ENV_ENTRY(s) { s, sizeof(s) - 1 }
+static const struct {
+	const char *name;
+	size_t len;
+} enroot_deny_env[] = {
+	PYXIS_ENV_ENTRY("PATH="),
+	PYXIS_ENV_ENTRY("LD_LIBRARY_PATH="),
+	PYXIS_ENV_ENTRY("LD_PRELOAD="),
+	PYXIS_ENV_ENTRY("SLURM_PROCID="),
+	PYXIS_ENV_ENTRY("SLURM_LOCALID="),
+	PYXIS_ENV_ENTRY("SLURM_TASK_PID="),
+	PYXIS_ENV_ENTRY("PMIX_RANK="),
+	PYXIS_ENV_ENTRY("PMI_FD="),
+	PYXIS_ENV_ENTRY("ENROOT_LIBRARY_PATH="),
+	PYXIS_ENV_ENTRY("ENROOT_SYSCONF_PATH="),
+	PYXIS_ENV_ENTRY("ENROOT_RUNTIME_PATH="),
+	PYXIS_ENV_ENTRY("ENROOT_CACHE_PATH="),
+	PYXIS_ENV_ENTRY("ENROOT_DATA_PATH="),
+	PYXIS_ENV_ENTRY("ENROOT_TEMP_PATH="),
+	PYXIS_ENV_ENTRY("ENROOT_ZSTD_OPTIONS="),
+	PYXIS_ENV_ENTRY("ENROOT_TRANSFER_RETRIES="),
+	PYXIS_ENV_ENTRY("ENROOT_CONNECT_TIMEOUT="),
+	PYXIS_ENV_ENTRY("ENROOT_TRANSFER_TIMEOUT="),
+	PYXIS_ENV_ENTRY("ENROOT_MAX_CONNECTIONS="),
+	PYXIS_ENV_ENTRY("ENROOT_ALLOW_HTTP="),
+	{ NULL, 0 }
 };
+#undef PYXIS_ENV_ENTRY
+
+static int try_import_env(char *string)
+{
+	for (int i = 0; enroot_deny_env[i].name != NULL; ++i) {
+		if (strncmp(string, enroot_deny_env[i].name, enroot_deny_env[i].len) == 0)
+			return (0);
+	}
+
+	if (putenv(string) < 0)
+		return (-1);
+
+	return (0);
+}
 
 static int enroot_import_job_env(char **env)
 {
 	if (env == NULL)
 		return (-1);
 
-	for (int i = 0; env[i]; ++i)
-		for (int j = 0; enroot_want_env[j]; ++j)
-			if (strncmp(env[i], enroot_want_env[j], strlen(enroot_want_env[j])) == 0)
-				if (putenv(env[i]) < 0)
-					return (-1);
+	/* Import all allowed environment variables from the job */
+	for (int i = 0; env[i]; ++i) {
+		if (try_import_env(env[i]) < 0)
+			return (-1);
+	}
 
 	return (0);
 }
