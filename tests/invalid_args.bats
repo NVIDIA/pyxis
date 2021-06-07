@@ -52,3 +52,8 @@ load ./common
     run_srun_unchecked --container-workdir= --container-image=ubuntu:18.04 true
     [ "${status}" -ne 0 ]
 }
+
+@test "invalid arg: --container-readonly --container-writable" {
+    run_srun_unchecked --container-readonly --container-writable --container-image=ubuntu:20.04 true
+    [ "${status}" -ne 0 ]
+}

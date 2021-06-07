@@ -19,6 +19,7 @@ static struct plugin_args pyxis_args = {
 	.mount_home = -1,
 	.remap_root = -1,
 	.entrypoint = -1,
+	.writable   = -1,
 };
 
 static int spank_option_image(int val, const char *optarg, int remote);
@@ -29,6 +30,7 @@ static int spank_option_container_save(int val, const char *optarg, int remote);
 static int spank_option_container_mount_home(int val, const char *optarg, int remote);
 static int spank_option_container_remap_root(int val, const char *optarg, int remote);
 static int spank_option_container_entrypoint(int val, const char *optarg, int remote);
+static int spank_option_container_writable(int val, const char *optarg, int remote);
 
 struct spank_option spank_opts[] =
 {
@@ -107,6 +109,20 @@ struct spank_option spank_opts[] =
 		"[pyxis] do not execute the entrypoint from the container image"
 		,
 		0, 0, spank_option_container_entrypoint
+	},
+	{
+		"container-writable",
+		NULL,
+		"[pyxis] make the container filesystem writable"
+		,
+		0, 1, spank_option_container_writable
+	},
+	{
+		"container-readonly",
+		NULL,
+		"[pyxis] make the container filesystem read-only"
+		,
+		0, 0, spank_option_container_writable
 	},
 	SPANK_OPTIONS_TABLE_END
 };
@@ -391,6 +407,18 @@ static int spank_option_container_entrypoint(int val, const char *optarg, int re
 	}
 
 	pyxis_args.entrypoint = val;
+
+	return (0);
+}
+
+static int spank_option_container_writable(int val, const char *optarg, int remote)
+{
+	if (pyxis_args.writable != -1 && pyxis_args.writable != val) {
+		slurm_error("pyxis: both --container-writable and --container-readonly were specified");
+		return (-1);
+	}
+
+	pyxis_args.writable = val;
 
 	return (0);
 }

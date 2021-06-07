@@ -342,6 +342,16 @@ static int enroot_set_env(void)
 			return (-1);
 	}
 
+	if (context.args->writable == 0) {
+		if (setenv("ENROOT_ROOTFS_WRITABLE", "n", 1) < 0)
+			return (-1);
+	} else if (context.args->writable == 1) {
+		if (setenv("ENROOT_ROOTFS_WRITABLE", "y", 1) < 0)
+			return (-1);
+	} else {
+		/* If writable/readonly was not set by the user, we rely on the setting specified in the enroot config. */
+	}
+
 	return (0);
 }
 
