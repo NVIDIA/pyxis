@@ -41,9 +41,9 @@ function teardown() {
 
 @test "--container-save relative path" {
     readonly image="./ubuntu-modified.sqsh"
-    run_srun --container-image=ubuntu:20.04 --container-save=${image} sh -c 'echo pyxis > /test' ; sleep 1s
-    run_srun --container-image=${image} --container-save=${image} sh -c 'echo slurm > /test2' ; sleep 1s
-    run_srun --container-image=${image} --container-save=${image} --container-remap-root sh -c 'apt-get update && apt-get install -y file' ; sleep 1s
+    run_srun --container-image=ubuntu:20.04 --container-save=${image} sh -c 'echo pyxis > /test' ; sleep 3s
+    run_srun --container-image=${image} --container-save=${image} sh -c 'echo slurm > /test2' ; sleep 3s
+    run_srun --container-image=${image} --container-save=${image} --container-remap-root sh -c 'apt-get update && apt-get install -y file' ; sleep 3s
     run_srun --container-image=${image} which file
     run_srun --container-image=${image} cat /test
     [ "${lines[-1]}" == "pyxis" ]

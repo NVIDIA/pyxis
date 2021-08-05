@@ -19,10 +19,10 @@ load ./common
 }
 
 @test "nvidia/cuda:10.2-base with \$NVIDIA_VISIBLE_DEVICES=0" {
-    if ! which nvidia-smi; then
+    if ! srun which nvidia-smi; then
 	skip "no NVIDIA GPUs"
     fi
-    gpus="$(nvidia-smi -L | wc -l)"
+    gpus="$(srun nvidia-smi -L | wc -l)"
     if [ "${gpus}" -le 1 ]; then
 	skip "need 2 or more GPUs"
     fi
@@ -35,7 +35,7 @@ load ./common
 }
 
 @test "ubuntu:18.04 with \$NVIDIA_VISIBLE_DEVICES=all" {
-    if ! which nvidia-smi; then
+    if ! srun which nvidia-smi; then
 	skip "no NVIDIA GPUs"
     fi
 
@@ -43,7 +43,7 @@ load ./common
 }
 
 @test "ubuntu:18.04 with \$NVIDIA_DRIVER_CAPABILITIES=utility,compute" {
-    if ! which nvidia-smi; then
+    if ! srun which nvidia-smi; then
 	skip "no NVIDIA GPUs"
     fi
 

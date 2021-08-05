@@ -17,7 +17,7 @@ function teardown() {
 
     sleep 3s
     # Force pseudo-terminal allocation with -t
-    run ssh -t -p 2222 -o StrictHostKeyChecking=no localhost true
+    run_srun --overlap ssh -t -p 2222 -o StrictHostKeyChecking=no localhost true
     [ "${status}" -eq 0 ]
 
     wait
@@ -30,7 +30,7 @@ function teardown() {
     run_srun --container-name=sshd --no-container-remap-root -t 1 --signal TERM@30 /usr/sbin/sshd -d -p 2222 &
 
     sleep 3s
-    run_srun --container-name=sshd true
+    run_srun --overlap --container-name=sshd true
 
     wait
 }

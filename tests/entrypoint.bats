@@ -11,6 +11,10 @@ function teardown() {
 }
 
 @test "--container-entrypoint: jrottenberg/ffmpeg" {
+    if srun bash -c '[ -f /etc/enroot/entrypoint ]'; then
+	skip "entrypoint disabled by enroot"
+    fi
+
     # This container image uses 'ENTRYPOINT ["ffmpeg"]'
     run_srun_unchecked --container-entrypoint --container-image jrottenberg/ffmpeg:3.2-alpine true
     [ "${status}" -ne 0 ]

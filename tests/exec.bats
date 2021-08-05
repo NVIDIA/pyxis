@@ -15,7 +15,8 @@ function teardown() {
     run_srun --container-name=exec-test sleep 30s &
 
     sleep 5s # FIXME...
-    pid=$(enroot list -f | awk -vNAME1=pyxis_exec-test -vNAME2=pyxis_${SLURM_JOB_ID}_exec-test '($1 == NAME1 || $1 == NAME2) { print $2 }')
+    run_enroot list -f
+    pid=$(awk -vNAME1=pyxis_exec-test -vNAME2=pyxis_${SLURM_JOB_ID}_exec-test '($1 == NAME1 || $1 == NAME2) { print $2 }' <<< "${output}")
     logf "pid: %s" "${pid}"
     [ "${pid}" -gt "1" ]
     run_enroot exec "${pid}" true

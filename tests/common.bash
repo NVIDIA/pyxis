@@ -9,8 +9,8 @@ function logf() {
 }
 
 function run_enroot() {
-    log "+ enroot $@"
-    run enroot "$@"
+    log "+ srun -N1 --oversubscribe enroot $@"
+    run srun -N1 --oversubscribe enroot "$@"
 
     log "${output}"
 
@@ -34,6 +34,6 @@ function run_srun() {
 
 function enroot_cleanup() {
     for name in "$@"; do
-	{ enroot remove -f pyxis_${name} || enroot remove -f pyxis_${SLURM_JOB_ID}_${name}; } >/dev/null 2>&1
+	{ srun enroot remove -f pyxis_${name} || srun enroot remove -f pyxis_${SLURM_JOB_ID}_${name}; } >/dev/null 2>&1
     done
 }

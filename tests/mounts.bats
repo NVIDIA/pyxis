@@ -7,7 +7,7 @@ load ./common
 }
 
 @test "--container-mounts regular file" {
-    run_srun --container-mounts="${BASH_SOURCE[0]}:/script.bats" --container-image=ubuntu:18.04 cat /script.bats
+    run_srun --container-mounts="./tests/mounts.bats:/script.bats" --container-image=ubuntu:18.04 cat /script.bats
 }
 
 @test "--container-mounts character device file" {
