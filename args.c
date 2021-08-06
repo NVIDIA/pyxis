@@ -183,7 +183,7 @@ fail:
 	return (rv);
 }
 
-static int add_mount(const char *source, const char *target, const char *flags)
+int add_mount(const char *source, const char *target, const char *flags)
 {
 	int ret;
 	char *entry = NULL;

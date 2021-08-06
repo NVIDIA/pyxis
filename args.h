@@ -27,6 +27,8 @@ struct plugin_args *pyxis_args_register(spank_t sp);
 
 bool pyxis_args_enabled(void);
 
+int add_mount(const char *source, const char *target, const char *flags);
+
 void pyxis_args_free(void);
 
 #endif /* ARGS_H_ */

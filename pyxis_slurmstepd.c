@@ -866,6 +866,9 @@ static int shm_destroy(struct shared_memory *shm)
 int slurm_spank_user_init(spank_t sp, int ac, char **av)
 {
 	int ret;
+	spank_err_t rc;
+	int spank_argc = 0;
+	char **spank_argv = NULL;
 	char *container_name = NULL;
 	pid_t pid;
 	int rv = -1;
@@ -880,6 +883,27 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	ret = job_get_env(sp, &context.job);
 	if (ret < 0)
 		goto fail;
+
+	if (context.job.stepid == SLURM_BATCH_SCRIPT) {
+		rc = spank_get_item(sp, S_JOB_ARGV, &spank_argc, &spank_argv);
+		if (rc != ESPANK_SUCCESS) {
+			slurm_error("pyxis: couldn't get job argv: %s", spank_strerror(rc));
+			goto fail;
+		}
+
+		if (spank_argc == 0) {
+			slurm_error("pyxis: couldn't get sbatch script: argc == 0");
+			goto fail;
+		}
+
+		/* Mount the sbatch script (from the Slurmd spool dir) inside the container */
+		ret = add_mount(spank_argv[0], spank_argv[0],
+				"x-create=file,bind,ro,nosuid,nodev,private");
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't add bind mount for sbatch script");
+			goto fail;
+		}
+	}
 
 	if (context.args->container_name != NULL) {
 		if (context.config.container_scope == SCOPE_JOB)

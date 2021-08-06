@@ -35,6 +35,7 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	config->remap_root = true;
 	config->execute_entrypoint = false;
 	config->container_scope = SCOPE_GLOBAL;
+	config->sbatch_support = true;
 
 	for (int i = 0; i < ac; ++i) {
 		if (strncmp("runtime_path=", av[i], 13) == 0) {
@@ -69,6 +70,14 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 				slurm_error("pyxis: container_scope: invalid value: %s", optarg);
 				return (-1);
 			}
+		} else if (strncmp("sbatch_support=", av[i], 15) == 0) {
+			optarg = av[i] + 15;
+			ret = parse_bool(optarg);
+			if (ret < 0) {
+				slurm_error("pyxis: sbatch_support: invalid value: %s", optarg);
+				return (-1);
+			}
+			config->sbatch_support = ret;
 		} else {
 			slurm_error("pyxis: unknown configuration option: %s", av[i]);
 			return (-1);

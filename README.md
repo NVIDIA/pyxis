@@ -91,6 +91,7 @@ $ srun --help
 
 ## Examples
 
+### `srun`
 ```console
 $ # Run a command on a worker node
 $ srun grep PRETTY /etc/os-release
@@ -103,6 +104,21 @@ PRETTY_NAME="CentOS Linux 7 (Core)"
 $ # mount a file from the host and run the command on it, from inside the container
 $ srun --container-image=centos --container-mounts=/etc/os-release:/host/os-release grep PRETTY /host/os-release
 PRETTY_NAME="Ubuntu 18.04.2 LTS"
+```
+
+### `sbatch`
+```console
+$ # execute the sbatch script inside a container image
+$ sbatch --wait -o slurm.out <<EOF
+#!/bin/bash -eux
+#SBATCH --container-image centos:8
+grep PRETTY /etc/os-release
+EOF
+
+$ cat slurm.out
+pyxis: importing docker image ...
++ grep PRETTY /etc/os-release
+PRETTY_NAME="CentOS Linux 8"
 ```
 
 ## Advanced Documentation (wiki)
@@ -124,6 +140,7 @@ This project is released under the [Apache License Version 2.0](https://github.c
 Integration tests can be ran with [bats](https://github.com/bats-core/bats-core) from within a Slurm job allocation:
 ```console
 $ salloc --overcommit bats tests
+$ bats tests/sbatch
 ```
 Some tests assume a specific enroot configuration (such as PMIx/PyTorch hooks), so they might not pass on all systems.
 

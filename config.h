@@ -18,6 +18,7 @@ struct plugin_config {
 	bool remap_root;
 	bool execute_entrypoint;
 	enum container_scope container_scope;
+	bool sbatch_support;
 };
 
 int pyxis_config_parse(struct plugin_config *config, int ac, char **av);

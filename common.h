@@ -16,6 +16,11 @@ static inline void xclose(int fd)
 
 int xasprintf(char **strp, const char *fmt, ...);
 
+/* https://github.com/SchedMD/slurm/blob/slurm-20-11-8-1/slurm/slurm.h.in#L161-L162 */
+#if !defined(SLURM_BATCH_SCRIPT)
+# define SLURM_BATCH_SCRIPT (0xfffffffb)
+#endif
+
 #if !defined(MFD_CLOEXEC)
 # define MFD_CLOEXEC 0x0001U
 #endif /* !defined(MFD_CLOEXEC) */
