@@ -944,10 +944,10 @@ static int spank_copy_env(spank_t sp, const char *from, const char *to, int over
 	spank_err_t rc;
 
 	rc = spank_getenv(sp, from, buf, sizeof(buf));
-	if (rc == ESPANK_ENV_NOEXIST)
-		return (0);
-	else if (rc != ESPANK_SUCCESS)
+	if (rc != ESPANK_SUCCESS) {
+		slurm_error("pyxis: failed to get %s: %s", from, spank_strerror(rc));
 		return (-1);
+	}
 
 	rc = spank_setenv(sp, to, buf, overwrite);
 	if (rc != ESPANK_SUCCESS) {
@@ -960,10 +960,11 @@ static int spank_copy_env(spank_t sp, const char *from, const char *to, int over
 
 static bool pytorch_setup_needed(spank_t sp)
 {
+	char buf[256];
 	spank_err_t rc;
 
-	rc = spank_getenv(sp, "PYTORCH_VERSION", NULL, 0);
-	if (rc == ESPANK_ENV_NOEXIST || rc != ESPANK_NOSPACE)
+	rc = spank_getenv(sp, "PYTORCH_VERSION", buf, sizeof(buf));
+	if (rc != ESPANK_SUCCESS)
 		return (false);
 
 	return (true);
