@@ -1,0 +1,41 @@
+name: Coverity Scan
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential lsb-release curl ca-certificates libslurm-dev perl
+
+    - name: Coverity download
+      env:
+          COVERITY_TOKEN: ${{ secrets.COVERITY_TOKEN }}
+      run: |
+        mkdir -p cov-analysis-linux64
+        curl --proto '=https' -fSsL https://scan.coverity.com/download/linux64 --data "token=${COVERITY_TOKEN}&project=NVIDIA%2Fpyxis" | tar xz --strip 1 -C cov-analysis-linux64
+
+    - name: Coverity build
+      run: |
+        export PATH="./cov-analysis-linux64/bin:${PATH}"
+        cov-build --dir cov-int make
+        tar czf pyxis.tgz cov-int
+
+    - name: Coverity upload
+      env:
+          COVERITY_TOKEN: ${{ secrets.COVERITY_TOKEN }}
+      run: |
+        curl --form "token=${COVERITY_TOKEN}" \
+             --form email=fabecassis@nvidia.com \
+             --form file=@pyxis.tgz \
+             --form description="Container plugin for Slurm Workload Manager" \
+             https://scan.coverity.com/builds?project=NVIDIA%2Fpyxis
