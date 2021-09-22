@@ -15,7 +15,6 @@ enum container_scope {
 
 struct plugin_config {
 	char runtime_path[PATH_MAX];
-	bool remap_root;
 	bool execute_entrypoint;
 	enum container_scope container_scope;
 	bool sbatch_support;

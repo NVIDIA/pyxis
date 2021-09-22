@@ -83,11 +83,6 @@ static struct plugin_context context = {
 	.user_init_rv = 0,
 };
 
-static bool pyxis_remap_root(void)
-{
-	return context.args->remap_root == 1 || (context.args->remap_root == -1 && context.config.remap_root == true);
-}
-
 static bool pyxis_execute_entrypoint(void)
 {
 	return context.args->entrypoint == 1 || (context.args->entrypoint == -1 && context.config.execute_entrypoint == true);
@@ -334,12 +329,14 @@ static int enroot_set_env(void)
 		/* If mount_home was not set by the user, we rely on the setting specified in the enroot config. */
 	}
 
-	if (pyxis_remap_root()) {
+	if (context.args->remap_root == 0) {
+		if (setenv("ENROOT_REMAP_ROOT", "n", 1) < 0)
+			return (-1);
+	} else if (context.args->remap_root == 1) {
 		if (setenv("ENROOT_REMAP_ROOT", "y", 1) < 0)
 			return (-1);
 	} else {
-		if (setenv("ENROOT_REMAP_ROOT", "n", 1) < 0)
-			return (-1);
+		/* If remap_root was not set by the user, we rely on the setting specified in the enroot config. */
 	}
 
 	if (context.args->writable == 0) {
