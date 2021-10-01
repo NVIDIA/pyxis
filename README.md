@@ -45,7 +45,7 @@ $ sudo systemctl restart slurmd
 ## Usage
 Pyxis being a SPANK plugin, the new command-line arguments it introduces are directly added to `srun`.
 
-```
+```console
 $ srun --help
 ...
       --container-image=[USER@][REGISTRY#]IMAGE[:TAG]|PATH
@@ -87,6 +87,8 @@ $ srun --help
       --no-container-entrypoint
                               [pyxis] do not execute the entrypoint from the
                               container image
+      --container-writable    [pyxis] make the container filesystem writable
+      --container-readonly    [pyxis] make the container filesystem read-only
 ```
 
 ## Examples
