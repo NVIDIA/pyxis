@@ -561,7 +561,7 @@ static int enroot_container_create(void)
 
 		should_delete_squashfs = true;
 
-		slurm_spank_log("pyxis: importing docker image ...");
+		slurm_spank_log("pyxis: importing docker image: %s", context.args->image);
 
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", squashfs_path, enroot_uri, NULL });
 		if (ret < 0) {
@@ -571,7 +571,7 @@ static int enroot_container_create(void)
 		}
 	}
 
-	slurm_info("pyxis: creating container filesystem ...");
+	slurm_info("pyxis: creating container filesystem: %s", context.container.name);
 
 	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, squashfs_path, NULL });
 	if (ret < 0) {
@@ -587,7 +587,7 @@ fail:
 	if (should_delete_squashfs && *squashfs_path != '\0') {
 		ret = unlink(squashfs_path);
 		if (ret < 0)
-			slurm_info("pyxis: could not remove squashfs: %s", strerror(errno));
+			slurm_info("pyxis: could not remove squashfs %s: %s", squashfs_path, strerror(errno));
 	}
 
 	return (rv);
@@ -736,7 +736,7 @@ static pid_t enroot_container_start(void)
 	int status;
 	pid_t rv = -1;
 
-	slurm_info("pyxis: starting container ...");
+	slurm_info("pyxis: starting container: %s", context.container.name);
 
 	ret = enroot_create_start_config(&conf_file);
 	if (ret < 0) {
@@ -1214,7 +1214,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	int rv = 0;
 
 	if (context.container.save_path != NULL) {
-		slurm_spank_log("pyxis: saving container filesystem ...");
+		slurm_spank_log("pyxis: saving container filesystem: %s", context.container.save_path);
 
 		ret = enroot_container_export();
 		if (ret < 0) {
@@ -1224,11 +1224,11 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	}
 
 	if (context.container.temporary) {
-		slurm_info("pyxis: removing container filesystem ...");
+		slurm_info("pyxis: removing container filesystem: %s", context.container.name);
 
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
 		if (ret < 0) {
-			slurm_error("pyxis: failed to remove container filesystem");
+			slurm_error("pyxis: failed to remove container filesystem: %s", context.container.name);
 			enroot_print_log_ctx();
 			rv = -1;
 		}

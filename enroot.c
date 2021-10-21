@@ -26,7 +26,7 @@ pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
 
 	argv_str = join_strings(argv, " ");
 	if (argv_str != NULL) {
-		slurm_verbose("pyxis: running \"%s\" ...", argv_str);
+		slurm_verbose("pyxis: running enroot command: \"%s\"", argv_str);
 		free(argv_str);
 	}
 
@@ -140,7 +140,7 @@ void enroot_print_log(int log_fd)
 		return;
 	}
 
-	slurm_error("pyxis: printing contents of log file ...");
+	slurm_error("pyxis: printing enroot log file:");
 	while ((line = get_line_from_file(fp)) != NULL) {
 		slurm_error("pyxis:     %s", line);
 		free(line);
