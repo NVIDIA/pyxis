@@ -112,16 +112,17 @@ PRETTY_NAME="Ubuntu 20.04.2 LTS"
 ```console
 $ # execute the sbatch script inside a container image
 $ sbatch --wait -o slurm.out <<EOF
-#!/bin/bash -eux
-#SBATCH --container-image centos:8
-grep PRETTY /etc/os-release
+#!/bin/bash
+#SBATCH --container-image nvcr.io\#nvidia/pytorch:21.12-py3
+
+python -c 'import torch ; print(torch.__version__)'
 EOF
 
 $ cat slurm.out
-pyxis: importing docker image: centos:8
-+ grep PRETTY /etc/os-release
-PRETTY_NAME="CentOS Linux 8"
+pyxis: importing docker image: nvcr.io#nvidia/pytorch:21.12-py3
+1.11.0a0+b6df043
 ```
+As `#` is the character used to start a `SBATCH` comment, this character needs to be escaped when also used in `--container-image` as a separator between the registry and the image name.
 
 ## Advanced Documentation (wiki)
 1. [Home](https://github.com/NVIDIA/pyxis/wiki/Home)
