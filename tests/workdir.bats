@@ -21,7 +21,7 @@ load ./common
 }
 
 @test "container image workdir" {
-    run_srun_unchecked --container-image=nvcr.io/nvidia/pytorch:20.02-py3 pwd
+    run_srun_unchecked --container-image=nvcr.io#nvidia/pytorch:20.02-py3 pwd
     [ "${status}" -eq 0 ]
     [ "${lines[-1]}" == "/workspace" ]
 }
