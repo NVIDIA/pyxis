@@ -1106,7 +1106,8 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	ret = enroot_start_once(&context.container, context.shm);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't start container");
-		slurm_error("pyxis: if the image has an unusual entrypoint, try using --no-container-entrypoint");
+		if (pyxis_execute_entrypoint())
+			slurm_error("pyxis: if the image has an unusual entrypoint, try using --no-container-entrypoint");
 		goto fail;
 	}
 
