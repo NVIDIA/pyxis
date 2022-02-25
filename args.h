@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
  */
 
 #ifndef ARGS_H_
@@ -28,6 +28,8 @@ struct plugin_args *pyxis_args_register(spank_t sp);
 bool pyxis_args_enabled(void);
 
 int add_mount(const char *source, const char *target, const char *flags);
+
+void remove_all_mounts(void);
 
 void pyxis_args_free(void);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <linux/limits.h>
@@ -936,6 +936,11 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		if (ret < 0)
 			goto fail;
 		context.container.temporary = true;
+	}
+
+	if (context.container.reuse_ns && context.args->mounts_len > 0) {
+		slurm_spank_log("pyxis: ignoring --container-mounts when attaching to a running container");
+		remove_all_mounts();
 	}
 
 	if (context.args->container_save != NULL)

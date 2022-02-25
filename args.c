@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <stdio.h>
@@ -227,6 +227,16 @@ fail:
 	free(entry);
 
 	return (rv);
+}
+
+void remove_all_mounts(void)
+{
+	for (int i = 0; i < pyxis_args.mounts_len; ++i)
+		free(pyxis_args.mounts[i]);
+	free(pyxis_args.mounts);
+
+	pyxis_args.mounts = NULL;
+	pyxis_args.mounts_len = 0;
 }
 
 static int parse_mount_option(const char *option)
@@ -460,9 +470,7 @@ bool pyxis_args_enabled(void)
 void pyxis_args_free(void)
 {
 	free(pyxis_args.image);
-	for (int i = 0; i < pyxis_args.mounts_len; ++i)
-		free(pyxis_args.mounts[i]);
-	free(pyxis_args.mounts);
+	remove_all_mounts();
 	free(pyxis_args.workdir);
 	free(pyxis_args.container_name);
 	free(pyxis_args.container_save);

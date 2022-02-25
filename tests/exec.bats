@@ -27,13 +27,22 @@ function teardown() {
     run_srun --container-name=exec-test --container-remap-root bash -c "mount -t tmpfs none /mymnt && sleep 30s" &
 
     sleep 5s # FIXME...
-    run_srun --container-name=exec-test findmnt /mymnt
+    run_srun --overlap --container-name=exec-test findmnt /mymnt
 }
 
 @test "attach to running container after directory change" {
     run_srun --container-image=ubuntu:20.04 --container-name=exec-test bash -c "cd /var && sleep 30s" &
 
     sleep 5s
-    run_srun --container-name=exec-test pwd
+    run_srun --overlap --container-name=exec-test pwd
     [ "${lines[-1]}" == "/" ]
+}
+
+@test "attach to running container with --container--mounts" {
+    run_srun --container-image=ubuntu:20.04 --container-name=exec-test bash -c "sleep 30s" &
+
+    sleep 5s
+    # Verify that --container-mounts is ignored when attaching to a running container.
+    run_srun --overlap --container-name=exec-test --container-mounts /tmp:/mnt/pyxis_test bash -c '[ ! -d "/mnt/pyxis_test" ]'
+    grep -q -- 'ignoring --container-mounts' <<< "${output}"
 }
