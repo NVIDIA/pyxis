@@ -9,7 +9,7 @@ URL:            https://github.com/NVIDIA/pyxis/
 BuildRequires:  make gcc slurm-devel
 
 Summary:        Pyxis is a SPANK plugin for the SLURM workload manager
-Requires:       enroot >= 3.1.0
+Requires:       (enroot >= 3.1.0 or enroot-hardened >= 3.1.0)
 
 %description
 Pyxis is a SPANK plugin for the SLURM Workload Manager. It allows unprivileged

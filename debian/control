@@ -8,7 +8,7 @@ Build-Depends: debhelper (>= 10), libslurm-dev
 
 Package: nvslurm-plugin-pyxis
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, enroot (>= 3.1.0)
+Depends: ${shlibs:Depends}, ${misc:Depends}, enroot (>= 3.1.0) | enroot-hardened (>= 3.1.0)
 Description: Slurm plugin for launching containerized tasks
  A SPANK plugin for the Slurm Resource Manager project to launch
  containerized tasks using "srun".
