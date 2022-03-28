@@ -561,7 +561,7 @@ static int enroot_container_create(void)
 
 		should_delete_squashfs = true;
 
-		slurm_spank_log("pyxis: importing docker image: %s", context.args->image);
+		slurm_info("pyxis: importing docker image: %s", context.args->image);
 
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", squashfs_path, enroot_uri, NULL });
 		if (ret < 0) {
@@ -569,6 +569,7 @@ static int enroot_container_create(void)
 			enroot_print_log_ctx();
 			goto fail;
 		}
+		slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
 	}
 
 	slurm_info("pyxis: creating container filesystem: %s", context.container.name);

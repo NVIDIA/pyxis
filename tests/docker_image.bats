@@ -36,6 +36,6 @@ load ./common
 @test "image download must be attempted once" {
     run_srun_unchecked --ntasks=2 --container-image=thisimagedoesntexist true
     [ "${status}" -ne 0 ]
-    attempts=$(grep -c 'importing docker image' <<< "${output}")
+    attempts=$(grep -c 'failed to import docker image' <<< "${output}")
     [ "${attempts}" -eq 1 ]
 }
