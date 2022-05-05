@@ -827,6 +827,10 @@ static struct shared_memory *shm_init(void)
 	if (ret < 0)
 		goto fail;
 
+	ret = pthread_mutexattr_setrobust(&mutex_attr, PTHREAD_MUTEX_ROBUST);
+	if (ret < 0)
+		goto fail;
+
 	ret = pthread_mutex_init(&shm->mutex, &mutex_attr);
 	if (ret < 0)
 		goto fail;
@@ -850,6 +854,10 @@ static int shm_destroy(struct shared_memory *shm)
 
 	if (shm == NULL)
 		return (0);
+
+	if (pthread_mutex_lock(&shm->mutex) == EOWNERDEAD)
+		pthread_mutex_consistent(&shm->mutex);
+	pthread_mutex_unlock(&shm->mutex);
 
 	ret = pthread_mutex_destroy(&shm->mutex);
 	if (ret < 0)
@@ -1034,7 +1042,12 @@ static int enroot_start_once(struct container *container, struct shared_memory *
 	int ret;
 	int rv = -1;
 
-	pthread_mutex_lock(&shm->mutex);
+	if (pthread_mutex_lock(&shm->mutex) == EOWNERDEAD) {
+		pthread_mutex_consistent(&shm->mutex);
+		shm->pid = -1;
+		shm->ns_pid = -1;
+		goto fail;
+	}
 
 	shm->init_tasks += 1;
 
