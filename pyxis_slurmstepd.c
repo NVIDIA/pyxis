@@ -15,6 +15,7 @@
 #include <paths.h>
 #include <pthread.h>
 #include <sched.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -56,8 +57,8 @@ struct job_info {
 
 struct shared_memory {
 	pthread_mutex_t mutex;
-	uint32_t init_tasks;
-	uint32_t started_tasks;
+	atomic_uint init_tasks;
+	atomic_uint started_tasks;
 	pid_t pid;
 	pid_t ns_pid;
 };
@@ -1066,12 +1067,8 @@ static int enroot_stop_once(struct container *container, struct shared_memory *s
 	int ret;
 	int rv = -1;
 
-	pthread_mutex_lock(&shm->mutex);
-
-	shm->started_tasks += 1;
-
 	/* Last task to start can stop the container process. */
-	if (context.shm->started_tasks == context.job.local_task_count) {
+	if (atomic_fetch_add(&shm->started_tasks, 1) == context.job.local_task_count - 1) {
 		ret = enroot_container_stop(shm->pid);
 		if (ret < 0)
 			goto fail;
@@ -1083,8 +1080,6 @@ static int enroot_stop_once(struct container *container, struct shared_memory *s
 	rv = 0;
 
 fail:
-	pthread_mutex_unlock(&shm->mutex);
-
 	return (rv);
 }
 
