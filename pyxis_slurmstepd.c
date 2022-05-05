@@ -59,6 +59,7 @@ struct shared_memory {
 	pthread_mutex_t mutex;
 	atomic_uint init_tasks;
 	atomic_uint started_tasks;
+	atomic_uint completed_tasks;
 	pid_t pid;
 	pid_t ns_pid;
 };
@@ -837,6 +838,7 @@ static struct shared_memory *shm_init(void)
 
 	shm->init_tasks = 0;
 	shm->started_tasks = 0;
+	shm->completed_tasks = 0;
 	shm->pid = -1;
 	shm->ns_pid = -1;
 
@@ -1223,20 +1225,52 @@ static int enroot_container_export(void)
 	return (0);
 }
 
+static int enroot_export_once(struct container *container, struct shared_memory *shm)
+{
+	int ret;
+
+	if (atomic_fetch_add(&context.shm->completed_tasks, 1) == context.job.local_task_count - 1) {
+		/* Check if job was interrupted before it fully started. */
+		if (context.shm->started_tasks != context.job.local_task_count)
+			return (0);
+
+		ret = enroot_container_export();
+		if (ret < 0)
+			return (-1);
+
+		slurm_spank_log("pyxis: exported container %s to %s", context.container.name, context.container.save_path);
+	}
+
+	return (0);
+}
+
+int slurm_spank_task_exit(spank_t sp, int ac, char **av)
+{
+	int ret;
+	int rv = -1;
+
+	if (!context.enabled)
+		return (0);
+
+	if (context.container.save_path == NULL)
+		return (0);
+
+	ret = enroot_export_once(&context.container, context.shm);
+	if (ret < 0) {
+		slurm_error("pyxis: failed to export container %s to %s", context.container.name, context.container.save_path);
+		goto fail;
+	}
+
+	rv = 0;
+
+fail:
+	return (rv);
+}
+
 int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
 	int rv = 0;
-
-	if (context.container.save_path != NULL) {
-		slurm_spank_log("pyxis: saving container filesystem: %s", context.container.save_path);
-
-		ret = enroot_container_export();
-		if (ret < 0) {
-			slurm_error("pyxis: failed to save container filesystem");
-			rv = -1;
-		}
-	}
 
 	if (context.container.temporary) {
 		slurm_info("pyxis: removing container filesystem: %s", context.container.name);
