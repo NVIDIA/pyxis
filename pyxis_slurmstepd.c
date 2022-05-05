@@ -35,10 +35,12 @@
 
 struct container {
 	char *name;
+	char *squashfs_path;
 	char *save_path;
 	bool reuse_rootfs;
 	bool reuse_ns;
-	bool temporary;
+	bool temporary_squashfs;
+	bool temporary_rootfs;
 	int userns_fd;
 	int mntns_fd;
 	int cgroupns_fd;
@@ -80,8 +82,16 @@ static struct plugin_context context = {
 	.log_fd = -1,
 	.config = { .runtime_path = { 0 } },
 	.args = NULL,
-	.job = { .uid = -1, .gid = -1, .jobid = 0, .stepid = 0, .environ = NULL, .cwd = { 0 } },
-	.container = { .name = NULL, .save_path = NULL, .reuse_rootfs = false, .reuse_ns = false, .temporary = false, .userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1 },
+	.job = {
+		.uid = -1, .gid = -1, .jobid = 0, .stepid = 0,
+		.local_task_count = 0,
+		.environ = NULL, .cwd = { 0 }
+	},
+	.container = {
+		.name = NULL, .squashfs_path = NULL, .save_path = NULL,
+		.reuse_rootfs = false, .reuse_ns = false, .temporary_squashfs = false, .temporary_rootfs = false,
+		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1
+	},
 	.user_init_rv = 0,
 };
 
@@ -539,33 +549,18 @@ fail:
 static int enroot_container_create(void)
 {
 	int ret;
-	char squashfs_path[PATH_MAX];
 	char *enroot_uri = NULL;
-	bool should_delete_squashfs = false;
 	int rv = -1;
 
-	if (strspn(context.args->image, "./") > 0) {
-		/* Assume `image` is a path to a squashfs file. */
-		if (strnlen(context.args->image, sizeof(squashfs_path)) >= sizeof(squashfs_path))
-			goto fail;
-
-		strncpy(squashfs_path, context.args->image, sizeof(squashfs_path) - 1);
-		squashfs_path[sizeof(squashfs_path) - 1] = '\0';
-	} else {
+	if (context.container.temporary_squashfs) {
 		/* Assume `image` is an enroot URI for a docker image. */
 		ret = xasprintf(&enroot_uri, "docker://%s", context.args->image);
 		if (ret < 0)
 			goto fail;
 
-		ret = snprintf(squashfs_path, sizeof(squashfs_path), "%s/%u/%u.%u.squashfs", context.config.runtime_path, context.job.uid, context.job.jobid, context.job.stepid);
-		if (ret < 0 || ret >= sizeof(squashfs_path))
-			goto fail;
-
-		should_delete_squashfs = true;
-
 		slurm_info("pyxis: importing docker image: %s", context.args->image);
 
-		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", squashfs_path, enroot_uri, NULL });
+		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", context.container.squashfs_path, enroot_uri, NULL });
 		if (ret < 0) {
 			slurm_error("pyxis: failed to import docker image");
 			enroot_print_log_ctx();
@@ -576,7 +571,7 @@ static int enroot_container_create(void)
 
 	slurm_info("pyxis: creating container filesystem: %s", context.container.name);
 
-	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, squashfs_path, NULL });
+	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, context.container.squashfs_path, NULL });
 	if (ret < 0) {
 		slurm_error("pyxis: failed to create container filesystem");
 		enroot_print_log_ctx();
@@ -587,10 +582,10 @@ static int enroot_container_create(void)
 
 fail:
 	free(enroot_uri);
-	if (should_delete_squashfs && *squashfs_path != '\0') {
-		ret = unlink(squashfs_path);
+	if (context.container.temporary_squashfs) {
+		ret = unlink(context.container.squashfs_path);
 		if (ret < 0)
-			slurm_info("pyxis: could not remove squashfs %s: %s", squashfs_path, strerror(errno));
+			slurm_info("pyxis: could not remove squashfs %s: %s", context.container.squashfs_path, strerror(errno));
 	}
 
 	return (rv);
@@ -947,7 +942,23 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		ret = xasprintf(&context.container.name, "pyxis_%u.%u", context.job.jobid, context.job.stepid);
 		if (ret < 0)
 			goto fail;
-		context.container.temporary = true;
+		context.container.temporary_rootfs = true;
+	}
+
+	if (!context.container.reuse_rootfs) {
+		if (strspn(context.args->image, "./") > 0) {
+			/* Assume `image` is a path to a squashfs file. */
+			if (strnlen(context.args->image, PATH_MAX) >= PATH_MAX)
+				goto fail;
+
+			context.container.squashfs_path = strdup(context.args->image);
+		} else {
+			ret = xasprintf(&context.container.squashfs_path, "%s/%u/%u.%u.squashfs",
+					context.config.runtime_path, context.job.uid, context.job.jobid, context.job.stepid);
+			if (ret < 0 || ret >= PATH_MAX)
+				goto fail;
+			context.container.temporary_squashfs = true;
+		}
 	}
 
 	if (context.container.reuse_ns && context.args->mounts_len > 0) {
@@ -1272,7 +1283,11 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	int ret;
 	int rv = 0;
 
-	if (context.container.temporary) {
+	/* Need to cleanup the temporary squashfs if the task running "enroot import" was interrupted. */
+	if (context.container.temporary_squashfs && context.container.squashfs_path != NULL)
+	        unlink(context.container.squashfs_path);
+
+	if (context.container.temporary_rootfs) {
 		slurm_info("pyxis: removing container filesystem: %s", context.container.name);
 
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
@@ -1284,6 +1299,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	}
 
 	free(context.container.name);
+	free(context.container.squashfs_path);
 	free(context.container.save_path);
 
 	if (context.job.environ != NULL) {
