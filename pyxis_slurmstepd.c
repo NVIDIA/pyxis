@@ -53,6 +53,7 @@ struct job_info {
 	uint32_t jobid;
 	uint32_t stepid;
 	uint32_t local_task_count;
+	uint32_t total_task_count;
 	char **environ;
 	char cwd[PATH_MAX];
 };
@@ -84,7 +85,7 @@ static struct plugin_context context = {
 	.args = NULL,
 	.job = {
 		.uid = -1, .gid = -1, .jobid = 0, .stepid = 0,
-		.local_task_count = 0,
+		.local_task_count = 0, .total_task_count = 0,
 		.environ = NULL, .cwd = { 0 }
 	},
 	.container = {
@@ -151,6 +152,12 @@ static int job_get_info(spank_t sp, struct job_info *job)
 	rc = spank_get_item(sp, S_JOB_LOCAL_TASK_COUNT, &job->local_task_count);
 	if (rc != ESPANK_SUCCESS) {
 		slurm_error("pyxis: couldn't get job local task count: %s", spank_strerror(rc));
+		goto fail;
+	}
+
+	rc = spank_get_item(sp, S_JOB_TOTAL_TASK_COUNT, &job->total_task_count);
+	if (rc != ESPANK_SUCCESS) {
+		slurm_error("pyxis: couldn't get job total task count: %s", spank_strerror(rc));
 		goto fail;
 	}
 
@@ -558,7 +565,9 @@ static int enroot_container_create(void)
 		if (ret < 0)
 			goto fail;
 
-		slurm_info("pyxis: importing docker image: %s", context.args->image);
+		/* Be more verbose if there is a single task in the job, it might be interactive */
+		if (context.job.total_task_count == 1)
+			slurm_spank_log("pyxis: importing docker image: %s", context.args->image);
 
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", context.container.squashfs_path, enroot_uri, NULL });
 		if (ret < 0) {
