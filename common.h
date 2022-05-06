@@ -35,6 +35,29 @@ int xasprintf(char **strp, const char *fmt, ...);
 # define CLONE_NEWCGROUP 0x02000000
 #endif
 
+#ifndef __STDC_NO_ATOMICS__
+# if defined __has_include
+#  if !__has_include(<stdatomic.h>)
+#   define __STDC_NO_ATOMICS__
+#  endif
+# elif defined __GNUC__
+#  define GCC_VERSION (__GNUC__*10000 + __GNUC_MINOR__*100 + __GNUC_PATCHLEVEL__)
+#  if GCC_VERSION < 40900
+#   define __STDC_NO_ATOMICS__
+#  endif
+# endif
+#endif
+
+#ifndef __STDC_NO_ATOMICS__
+# include <stdatomic.h>
+#else
+typedef unsigned int atomic_uint;
+
+# ifndef atomic_fetch_add
+#  define atomic_fetch_add(PTR, VAL) __atomic_fetch_add((PTR), (VAL), __ATOMIC_SEQ_CST)
+# endif
+#endif
+
 static inline int pyxis_memfd_create(const char *name, unsigned int flags)
 {
 	return syscall(__NR_memfd_create, name, flags);

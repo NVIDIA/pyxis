@@ -15,7 +15,6 @@
 #include <paths.h>
 #include <pthread.h>
 #include <sched.h>
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
