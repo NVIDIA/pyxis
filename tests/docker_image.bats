@@ -57,9 +57,9 @@ load ./common
     [ "${lines[-1]}" == "1.14.0" ]
 }
 
-@test "gcr.io TensorFlow 2.8" {
-    run_srun --no-container-mount-home --container-image=gcr.io#deeplearning-platform-release/tf-gpu.2-8 /entrypoint.sh python -c 'import tensorflow; print(tensorflow.__version__)'
-    [ "${lines[-1]}" == "2.8.0" ]
+@test "gcr.io TensorFlow 2.7" {
+    run_srun --no-container-mount-home --container-image=gcr.io#deeplearning-platform-release/tf-cpu.2-7 /entrypoint.sh python -c 'import tensorflow; print(tensorflow.__version__)'
+    [ "${lines[-1]}" == "2.7.0" ]
 }
 
 @test "gitlab.com NVIDIA device plugin" {
