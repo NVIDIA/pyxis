@@ -15,6 +15,7 @@ static struct plugin_args pyxis_args = {
 	.mounts_len = 0,
 	.workdir = NULL,
 	.container_name = NULL,
+	.container_name_flags = NULL,
 	.container_save = NULL,
 	.mount_home = -1,
 	.remap_root = -1,
@@ -347,6 +348,10 @@ static int spank_option_workdir(int val, const char *optarg, int remote)
 
 static int spank_option_container_name(int val, const char *optarg, int remote)
 {
+	char *optarg_dup = NULL;
+	char *name, *flags;
+	int rv = -1;
+
 	if (optarg == NULL || *optarg == '\0') {
 		slurm_error("pyxis: --container-name: argument required");
 		return (-1);
@@ -361,8 +366,34 @@ static int spank_option_container_name(int val, const char *optarg, int remote)
 		return (-1);
 	}
 
-	pyxis_args.container_name = strdup(optarg);
-	return (0);
+	optarg_dup = strdup(optarg);
+
+	flags = optarg_dup;
+	name = strsep(&flags, ":");
+
+	if (name == NULL || name[0] == '\0') {
+		slurm_error("pyxis: --container-name: empty name");
+		goto fail;
+	}
+
+	if (flags == NULL || flags[0] == '\0')
+		flags = "auto";
+
+	if (strcmp(flags, "auto") != 0 && strcmp(flags, "create") != 0 &&
+	    strcmp(flags, "exec") != 0 && strcmp(flags, "no_exec") != 0) {
+		slurm_error("pyxis: --container-name: flag must be \"auto\", \"create\", \"exec\" or \"no_exec\"");
+		goto fail;
+	}
+
+	pyxis_args.container_name = strdup(name);
+	pyxis_args.container_name_flags = strdup(flags);
+
+	rv = 0;
+
+fail:
+	free(optarg_dup);
+
+	return (rv);
 }
 
 static int spank_option_container_save(int val, const char *optarg, int remote)
@@ -473,6 +504,7 @@ void pyxis_args_free(void)
 	remove_all_mounts();
 	free(pyxis_args.workdir);
 	free(pyxis_args.container_name);
+	free(pyxis_args.container_name_flags);
 	free(pyxis_args.container_save);
 }
 

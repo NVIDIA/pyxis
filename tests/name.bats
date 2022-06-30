@@ -43,3 +43,10 @@ function teardown() {
     run_srun --container-image=ubuntu:18.04 --container-name=name-test bash -c '! which file'
     run_srun --container-name=name-test bash -c '! which file'
 }
+
+@test "--container-name create flag" {
+    run_srun --container-image=ubuntu:22.04 --container-name=name-test sleep 1s
+
+    run_srun_unchecked --container-name=name-test:create true
+    [ "${status}" -ne 0 ]
+}

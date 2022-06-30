@@ -931,6 +931,17 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			goto fail;
 		}
 
+		if (strcmp(context.args->container_name_flags, "create") == 0 && pid >= 0) {
+			slurm_error("pyxis: error: \"create\" flag was passed to --container-name but the container already exists");
+			goto fail;
+		}
+		if (strcmp(context.args->container_name_flags, "exec") == 0 && pid <= 0) {
+			slurm_error("pyxis: error: \"exec\" flag was passed to --container-name but the container is not running");
+			goto fail;
+		}
+		if (strcmp(context.args->container_name_flags, "no_exec") == 0 && pid > 0)
+			pid = 0;
+
 		if (pid > 0) {
 			slurm_info("pyxis: reusing existing container namespaces");
 			context.shm->ns_pid = pid;

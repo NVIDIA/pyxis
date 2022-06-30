@@ -16,6 +16,7 @@ struct plugin_args {
 	size_t mounts_len;
 	char *workdir;
 	char *container_name;
+	char *container_name_flags;
 	char *container_save;
 	int mount_home;
 	int remap_root;

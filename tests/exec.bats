@@ -46,3 +46,18 @@ function teardown() {
     run_srun --overlap --container-name=exec-test --container-mounts /tmp:/mnt/pyxis_test bash -c '[ ! -d "/mnt/pyxis_test" ]'
     grep -q -- 'ignoring --container-mounts' <<< "${output}"
 }
+
+@test "--container-name exec flag on stopped container" {
+    run_srun --container-image=ubuntu:22.04 --container-name=exec-test sleep 1s
+
+    run_srun_unchecked --container-name=exec-test:exec true
+    [ "${status}" -ne 0 ]
+}
+
+@test "--container-name no_exec flag on running container" {
+    run_srun --container-image=ubuntu:22.04 --container-name=exec-test mkdir /mymnt
+    run_srun --container-name=exec-test --container-remap-root bash -c "mount -t tmpfs none /mymnt && sleep 30s" &
+
+    sleep 5s
+    run_srun --overlap --container-name=exec-test:no_exec bash -c '! findmnt /mymnt'
+}
