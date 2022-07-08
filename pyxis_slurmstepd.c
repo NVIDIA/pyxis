@@ -49,6 +49,7 @@ struct container {
 struct job_info {
 	uid_t uid;
 	gid_t gid;
+	bool privileged;
 	uint32_t jobid;
 	uint32_t stepid;
 	uint32_t local_task_count;
@@ -83,7 +84,8 @@ static struct plugin_context context = {
 	.config = { .runtime_path = { 0 } },
 	.args = NULL,
 	.job = {
-		.uid = -1, .gid = -1, .jobid = 0, .stepid = 0,
+		.uid = -1, .gid = -1, .privileged = false,
+		.jobid = 0, .stepid = 0,
 		.local_task_count = 0, .total_task_count = 0,
 		.environ = NULL, .cwd = { 0 }
 	},
@@ -122,6 +124,7 @@ int pyxis_slurmstepd_init(spank_t sp, int ac, char **av)
 static int job_get_info(spank_t sp, struct job_info *job)
 {
 	spank_err_t rc;
+	char allow_superuser[] = "false";
 	int rv = -1;
 
 	rc = spank_get_item(sp, S_JOB_UID, &job->uid);
@@ -164,6 +167,14 @@ static int job_get_info(spank_t sp, struct job_info *job)
 	rc = spank_getenv(sp, "PWD", job->cwd, sizeof(job->cwd));
 	if (rc != ESPANK_SUCCESS)
 		slurm_info("pyxis: couldn't get job cwd path: %s", spank_strerror(rc));
+
+	rc = spank_getenv(sp, "ENROOT_ALLOW_SUPERUSER", allow_superuser, sizeof(allow_superuser));
+	if (rc == ESPANK_SUCCESS) {
+		if (job->uid == 0 && strcasecmp(allow_superuser, "no") != 0 && strcasecmp(allow_superuser, "false") != 0 &&
+		    strcasecmp(allow_superuser, "n") != 0 && strcasecmp(allow_superuser, "f") != 0) {
+			job->privileged = true;
+		}
+	}
 
 	rv = 0;
 
@@ -1176,10 +1187,12 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 			goto fail;
 	}
 
-	ret = setns(context.container.userns_fd, CLONE_NEWUSER);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't join user namespace: %s", strerror(errno));
-		goto fail;
+	if (!context.job.privileged) {
+		ret = setns(context.container.userns_fd, CLONE_NEWUSER);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't join user namespace: %s", strerror(errno));
+			goto fail;
+		}
 	}
 
 	if (context.container.cgroupns_fd >= 0) {
@@ -1211,10 +1224,12 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		}
 	}
 
-	ret = seccomp_set_filter();
-	if (ret < 0) {
-		slurm_error("pyxis: seccomp filter failed: %s", strerror(errno));
-		goto fail;
+	if (!context.job.privileged) {
+		ret = seccomp_set_filter();
+		if (ret < 0) {
+			slurm_error("pyxis: seccomp filter failed: %s", strerror(errno));
+			goto fail;
+		}
 	}
 
 	ret = enroot_stop_once(&context.container, context.shm);
