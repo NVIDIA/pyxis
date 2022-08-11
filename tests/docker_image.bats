@@ -52,14 +52,17 @@ load ./common
     [ "${lines[-1]}" == "1.12.0a0+bd13bc6" ]
 }
 
-@test "gcr.io TensorFlow 1.14" {
-    run_srun --no-container-mount-home --container-image=gcr.io#deeplearning-platform-release/tf-gpu.1-14 /entrypoint.sh python -c 'import tensorflow; print(tensorflow.__version__)'
-    [ "${lines[-1]}" == "1.14.0" ]
+@test "gcr.io hello-app" {
+    run_srun --no-container-mount-home --container-image=gcr.io#google-samples/hello-app:1.0 ls /hello-app
 }
 
-@test "gcr.io TensorFlow 2.7" {
-    run_srun --no-container-mount-home --container-image=gcr.io#deeplearning-platform-release/tf-cpu.2-7 /entrypoint.sh python -c 'import tensorflow; print(tensorflow.__version__)'
-    [ "${lines[-1]}" == "2.7.0" ]
+@test "pkg.dev hello-app-redis" {
+    run_srun --no-container-mount-home --container-image=us-docker.pkg.dev#google-samples/containers/gke/hello-app-redis:1.0  ls /hello-app /main.go
+}
+
+@test "gcr.io TensorFlow 2.9" {
+    run_srun --no-container-mount-home --container-image=gcr.io#deeplearning-platform-release/tf-cpu.2-9 /entrypoint.sh python -c 'import tensorflow; print(tensorflow.__version__)'
+    [[ "${lines[-1]}" == 2.9.* ]]
 }
 
 @test "gitlab.com NVIDIA device plugin" {
