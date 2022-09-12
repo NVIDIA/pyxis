@@ -18,6 +18,11 @@ load ./common
     grep -q '/tmp' <<< "${lines[-1]}" || grep -q 'tmpfs' <<< "${lines[-1]}"
 }
 
+@test "\$LANG special case" {
+    LANG=en_US.UTF-8 run_srun --container-image=ubuntu:22.04 --no-container-mount-home perl --version
+    ! grep 'Setting locale failed' <<< "${output}"
+}
+
 @test "nvidia/cuda:10.2-base with \$NVIDIA_VISIBLE_DEVICES=0" {
     if ! srun which nvidia-smi; then
 	skip "no NVIDIA GPUs"

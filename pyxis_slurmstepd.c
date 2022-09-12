@@ -528,6 +528,13 @@ fail:
 	return (rv);
 }
 
+static const char *container_deny_env[] = {
+	"LANG",
+	"LANGUAGE",
+	"LC_ALL",
+	NULL
+};
+
 static int spank_import_container_env(spank_t sp, pid_t pid)
 {
 	int ret;
@@ -535,6 +542,15 @@ static int spank_import_container_env(spank_t sp, pid_t pid)
 	size_t size;
 	spank_err_t rc;
 	int rv = -1;
+
+	/* First, remove unwanted environment variables from the job */
+	for (int i = 0; container_deny_env[i] != NULL; ++i) {
+		rc = spank_unsetenv(sp, container_deny_env[i]);
+		if (rc != ESPANK_SUCCESS) {
+			slurm_error("pyxis: failed to unset %s: %s", container_deny_env[i], spank_strerror(rc));
+			goto fail;
+		}
+	}
 
 	ret = read_proc_environ(pid, &proc_environ, &size);
 	if (ret < 0) {
