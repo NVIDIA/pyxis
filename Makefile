@@ -7,7 +7,7 @@ PLUGINDIR := $(abspath $(DESTDIR)/$(libdir)/slurm)
 CONFDIR   := $(abspath $(DESTDIR)/$(datadir)/pyxis)
 
 ARCH      ?= $(shell uname -m)
-VERSION   ?= 0.13.0
+VERSION   ?= 0.14.0
 
 PLUGIN := spank_pyxis.so
 CONF   := pyxis.conf
