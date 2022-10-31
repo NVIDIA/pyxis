@@ -73,3 +73,14 @@ load ./common
     attempts=$(grep -c 'failed to import docker image' <<< "${output}")
     [ "${attempts}" -eq 1 ]
 }
+
+@test "docker:// explicit import" {
+    run_srun --container-image docker://nvidia/cuda:11.8.0-base-ubuntu20.04 grep 'Ubuntu 20.04' /etc/os-release
+}
+
+@test "dockerd:// import" {
+    if ! which docker; then
+	skip "docker not installed"
+    fi
+    run_srun --container-image dockerd://nvidia/cuda:11.8.0-base-ubuntu22.04 grep 'Ubuntu 22.04' /etc/os-release
+}

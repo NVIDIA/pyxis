@@ -586,10 +586,17 @@ static int enroot_container_create(void)
 	int rv = -1;
 
 	if (context.container.temporary_squashfs) {
-		/* Assume `image` is an enroot URI for a docker image. */
-		ret = xasprintf(&enroot_uri, "docker://%s", context.args->image);
-		if (ret < 0)
-			goto fail;
+		if (strncmp("docker://", context.args->image, sizeof("docker://") - 1) == 0 ||
+		    strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) == 0) {
+			enroot_uri = strdup(context.args->image);
+			if (enroot_uri == NULL)
+				goto fail;
+		} else {
+			/* Assume `image` is an enroot URI for a docker image. */
+			ret = xasprintf(&enroot_uri, "docker://%s", context.args->image);
+			if (ret < 0)
+				goto fail;
+		}
 
 		/* Be more verbose if there is a single task in the job, it might be interactive */
 		if (context.job.total_task_count == 1)
