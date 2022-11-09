@@ -18,6 +18,8 @@ A pyxis is an [ancient small box or container](https://en.wikipedia.org/wiki/Pyx
 ## Installation
 Pyxis requires the [enroot](https://github.com/nvidia/enroot) container utility (version `3.1.0`) to be installed.
 
+Since [Slurm 21.08](https://github.com/SchedMD/slurm/blob/slurm-21-08-8-2/RELEASE_NOTES#L119-L121), pyxis must be compiled against the release of Slurm that is going to be deployed on the cluster. Compiling against `spank.h` from a different Slurm release will cause Slurm to prevent pyxis from loading with error `Incompatible plugin version`.
+
 #### With `make install`
 ```console
 $ sudo make install
