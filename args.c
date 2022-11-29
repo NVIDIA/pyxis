@@ -21,6 +21,8 @@ static struct plugin_args pyxis_args = {
 	.remap_root = -1,
 	.entrypoint = -1,
 	.writable   = -1,
+	.env_vars = NULL,
+	.env_vars_len = 0,
 };
 
 static int spank_option_image(int val, const char *optarg, int remote);
@@ -32,6 +34,7 @@ static int spank_option_container_mount_home(int val, const char *optarg, int re
 static int spank_option_container_remap_root(int val, const char *optarg, int remote);
 static int spank_option_container_entrypoint(int val, const char *optarg, int remote);
 static int spank_option_container_writable(int val, const char *optarg, int remote);
+static int spank_option_container_env(int val, const char *optarg, int remote);
 
 struct spank_option spank_opts[] =
 {
@@ -124,6 +127,12 @@ struct spank_option spank_opts[] =
 		"[pyxis] make the container filesystem read-only"
 		,
 		0, 0, spank_option_container_writable
+	},
+	{
+		"container-env",
+		"NAME[,NAME...]",
+		"[pyxis] names of environment variables to preserve from the host environment",
+		1, 0, spank_option_container_env
 	},
 	SPANK_OPTIONS_TABLE_END
 };
@@ -423,6 +432,44 @@ static int spank_option_container_writable(int val, const char *optarg, int remo
 	return (0);
 }
 
+static int spank_option_container_env(int val, const char *optarg, int remote)
+{
+	int ret;
+	char *optarg_dup = NULL;
+	char *args, *arg;
+	int rv = -1;
+
+	if (optarg == NULL || *optarg == '\0') {
+		slurm_error("pyxis: --container-env: argument required");
+		goto fail;
+	}
+
+	optarg_dup = strdup(optarg);
+	if (optarg_dup == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		goto fail;
+	}
+
+	args = optarg_dup;
+	while ((arg = strsep(&args, ",")) != NULL) {
+		if (*arg == '\0') {
+			slurm_error("pyxis: --container-env: invalid format: %s", optarg);
+			goto fail;
+		}
+
+		ret = array_add_unique(&pyxis_args.env_vars, &pyxis_args.env_vars_len, arg);
+		if (ret < 0)
+			goto fail;
+	}
+
+	rv = 0;
+
+fail:
+	free(optarg_dup);
+
+	return (rv);
+}
+
 struct plugin_args *pyxis_args_register(spank_t sp)
 {
 	spank_err_t rc;
@@ -465,5 +512,6 @@ void pyxis_args_free(void)
 	free(pyxis_args.container_name);
 	free(pyxis_args.container_name_flags);
 	free(pyxis_args.container_save);
+	array_free(&pyxis_args.env_vars, &pyxis_args.env_vars_len);
 }
 

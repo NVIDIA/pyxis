@@ -541,10 +541,15 @@ static int spank_import_container_env(spank_t sp, pid_t pid)
 	char *proc_environ = NULL;
 	size_t size;
 	spank_err_t rc;
+	int overwrite;
 	int rv = -1;
 
-	/* First, remove unwanted environment variables from the job */
+	/* First, remove unwanted locale environment variables from the job */
 	for (int i = 0; container_deny_env[i] != NULL; ++i) {
+		/* Check if the user explicitly requested this environment variable to be preserved */
+		if (array_contains(context.args->env_vars, context.args->env_vars_len, container_deny_env[i]))
+			continue;
+
 		rc = spank_unsetenv(sp, container_deny_env[i]);
 		if (rc != ESPANK_SUCCESS) {
 			slurm_error("pyxis: failed to unset %s: %s", container_deny_env[i], spank_strerror(rc));
@@ -564,8 +569,12 @@ static int spank_import_container_env(spank_t sp, pid_t pid)
 		value = proc_environ + i;
 		key = strsep(&value, "=");
 
-		rc = spank_setenv(sp, key, value, 1);
-		if (rc != ESPANK_SUCCESS) {
+		overwrite = 1;
+		if (array_contains(context.args->env_vars, context.args->env_vars_len, key))
+			overwrite = 0;
+
+		rc = spank_setenv(sp, key, value, overwrite);
+		if (rc != ESPANK_SUCCESS && rc != ESPANK_ENV_EXISTS) {
 			slurm_error("pyxis: failed to set %s: %s", key, spank_strerror(rc));
 			goto fail;
 		}

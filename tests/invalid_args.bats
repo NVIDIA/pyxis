@@ -62,3 +62,13 @@ load ./common
     run_srun_unchecked --container-readonly --container-writable --container-image=ubuntu:20.04 true
     [ "${status}" -ne 0 ]
 }
+
+@test "invalid arg: --container-env= (without argument)" {
+    run_srun_unchecked --container-env= --container-image=ubuntu:22.04 true
+    [ "${status}" -ne 0 ]
+}
+
+@test "invalid arg: --container-env trailing comma" {
+    run_srun_unchecked --container-env FOO, --container-image=ubuntu:22.04 true
+    [ "${status}" -ne 0 ]
+}

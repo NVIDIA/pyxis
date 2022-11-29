@@ -22,6 +22,8 @@ struct plugin_args {
 	int remap_root;
 	int entrypoint;
 	int writable;
+	char **env_vars;
+	size_t env_vars_len;
 };
 
 struct plugin_args *pyxis_args_register(spank_t sp);

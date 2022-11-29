@@ -54,3 +54,29 @@ load ./common
 
     NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=utility,compute run_srun --container-image=ubuntu bash -c 'ldconfig -p | grep libcuda.so.1'
 }
+
+@test "--container-env overriding container variable" {
+    export CUDA_VERSION=12.0.0
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64
+
+    run_srun --no-container-mount-home --container-image=nvidia/cuda:11.8.0-base-ubuntu22.04 sh -c 'echo $CUDA_VERSION'
+    [ "${lines[-1]}" == "11.8.0" ]
+
+    run_srun --no-container-mount-home --container-image=nvidia/cuda:11.8.0-base-ubuntu22.04 sh -c 'echo $LD_LIBRARY_PATH'
+    [ "${lines[-1]}" == "/usr/local/nvidia/lib:/usr/local/nvidia/lib64" ]
+
+    run_srun --no-container-mount-home --container-image=nvidia/cuda:11.8.0-base-ubuntu22.04 --container-env CUDA_VERSION sh -c 'echo $CUDA_VERSION'
+    [ "${lines[-1]}" == "12.0.0" ]
+
+    run_srun --no-container-mount-home --container-image=nvidia/cuda:11.8.0-base-ubuntu22.04 --container-env CUDA_VERSION,LD_LIBRARY_PATH sh -c 'echo $LD_LIBRARY_PATH'
+    [ "${lines[-1]}" == "/usr/local/cuda/lib64" ]
+
+    # Swap variables order
+    run_srun --no-container-mount-home --container-image=nvidia/cuda:11.8.0-base-ubuntu22.04 --container-env LD_LIBRARY_PATH,CUDA_VERSION sh -c 'echo $LD_LIBRARY_PATH'
+    [ "${lines[-1]}" == "/usr/local/cuda/lib64" ]
+}
+
+@test "--container-env forcing \$LANG passthrough" {
+    LANG=en_US.UTF-8 run_srun --container-image=ubuntu:22.04 --container-env LANG --no-container-mount-home perl --version
+    grep 'Setting locale failed' <<< "${output}"
+}
