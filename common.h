@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <sys/syscall.h>
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*x))
@@ -66,5 +67,11 @@ static inline int pyxis_memfd_create(const char *name, unsigned int flags)
 char *get_line_from_file(FILE *fp);
 
 char *join_strings(char *const strings[], const char *sep);
+
+bool array_contains(char **array, size_t len, const char *entry);
+
+int array_add_unique(char ***array, size_t *len, const char *entry);
+
+void array_free(char ***array, size_t *len);
 
 #endif /* COMMON_H_ */

@@ -73,3 +73,58 @@ char *join_strings(char *const strings[], const char *sep)
 	}
 	return result;
 }
+
+bool array_contains(char **array, size_t len, const char *entry)
+{
+	for (size_t i = 0; i < len; ++i) {
+		if (strcmp(array[i], entry) == 0) {
+			return (true);
+		}
+	}
+
+	return (false);
+
+}
+
+int array_add_unique(char ***array, size_t *len, const char *entry)
+{
+	char *entry_dup = NULL;
+	char **p = NULL;
+	int rv = -1;
+
+	if (array_contains(*array, *len, entry)) {
+		/* This entry already exists, skip it. */
+		return (0);
+	}
+
+	entry_dup = strdup(entry);
+	if (entry_dup == NULL)
+		goto fail;
+
+	p = realloc(*array, sizeof(char *) * (*len + 1));
+	if (p == NULL)
+		goto fail;
+	*array = p;
+	p = NULL;
+
+	(*array)[*len] = entry_dup;
+	entry_dup = NULL;
+	*len += 1;
+
+	rv = 0;
+
+fail:
+	free(entry_dup);
+	free(p);
+	return (rv);
+}
+
+void array_free(char ***array, size_t *len)
+{
+	for (size_t i = 0; i < *len; ++i)
+		free((*array)[i]);
+	free(*array);
+
+	*array = NULL;
+	*len = 0;
+}

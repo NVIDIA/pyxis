@@ -148,42 +148,6 @@ static int spank_option_image(int val, const char *optarg, int remote)
 	return (0);
 }
 
-static int add_mount_entry(const char *entry)
-{
-	char *entry_dup = NULL;
-	char **p = NULL;
-	int rv = -1;
-
-	for (size_t i = 0; i < pyxis_args.mounts_len; ++i) {
-		/* This mount entry already exists, skip it. */
-		if (strcmp(pyxis_args.mounts[i], entry) == 0) {
-			slurm_info("pyxis: skipping duplicate mount entry: %s", entry);
-			return (0);
-		}
-	}
-
-	entry_dup = strdup(entry);
-	if (entry_dup == NULL)
-		goto fail;
-
-	p = realloc(pyxis_args.mounts, sizeof(*pyxis_args.mounts) * (pyxis_args.mounts_len + 1));
-	if (p == NULL)
-		goto fail;
-	pyxis_args.mounts = p;
-	p = NULL;
-
-	pyxis_args.mounts[pyxis_args.mounts_len] = entry_dup;
-	entry_dup = NULL;
-	pyxis_args.mounts_len += 1;
-
-	rv = 0;
-
-fail:
-	free(entry_dup);
-	free(p);
-	return (rv);
-}
-
 int add_mount(const char *source, const char *target, const char *flags)
 {
 	int ret;
@@ -218,7 +182,7 @@ int add_mount(const char *source, const char *target, const char *flags)
 		goto fail;
 	}
 
-	ret = add_mount_entry(entry);
+	ret = array_add_unique(&pyxis_args.mounts, &pyxis_args.mounts_len, entry);
 	if (ret < 0)
 		goto fail;
 
@@ -232,12 +196,7 @@ fail:
 
 void remove_all_mounts(void)
 {
-	for (int i = 0; i < pyxis_args.mounts_len; ++i)
-		free(pyxis_args.mounts[i]);
-	free(pyxis_args.mounts);
-
-	pyxis_args.mounts = NULL;
-	pyxis_args.mounts_len = 0;
+	array_free(&pyxis_args.mounts, &pyxis_args.mounts_len);
 }
 
 static int parse_mount_option(const char *option)
