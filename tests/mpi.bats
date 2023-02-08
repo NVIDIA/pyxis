@@ -24,6 +24,11 @@ function teardown() {
     [ "$(sort -n <<< ${output})" == "$(seq 0 3)" ]
 }
 
+@test "PMIx Horovod" {
+    run_srun --mpi=pmix --ntasks=8 --container-image=nvcr.io/nvidia/tensorflow:23.01-tf2-py3 \
+             python -c "import os ; import horovod.tensorflow as hvd ; hvd.init(); assert(int(os.getenv('PMIX_RANK')) == hvd.rank())"
+}
+
 @test "PMI2 file descriptor" {
     run_srun --mpi=pmi2 --ntasks=4 --container-image=ubuntu:18.04 bash -c '[ -n "${PMI_FD}" ] && realpath /proc/self/fd/${PMI_FD} | grep -q socket'
 }
