@@ -91,6 +91,10 @@ $ srun --help
                               container image
       --container-writable    [pyxis] make the container filesystem writable
       --container-readonly    [pyxis] make the container filesystem read-only
+
+      --container-env=NAME[,NAME...]
+                              [pyxis] names of environment variables to preserve
+                              from the host environment
 ```
 
 ## Examples
