@@ -21,6 +21,7 @@ pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
 	int ret;
 	int null_fd = -1;
 	int target_fd = -1;
+	int oom_score_fd = -1;
 	pid_t pid;
 	char *argv_str;
 
@@ -58,6 +59,16 @@ pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
 		ret = dup2(target_fd, STDERR_FILENO);
 		if (ret < 0)
 			_exit(EXIT_FAILURE);
+
+		/*
+		 * Attempt to set oom_score_adj to 0, as it's often set to -1000 (OOM killing
+		 * disabled), inherited from slurmstepd or slurmd.
+		 */
+		oom_score_fd = open("/proc/self/oom_score_adj", O_CLOEXEC | O_WRONLY | O_APPEND);
+		if (oom_score_fd >= 0) {
+			dprintf(oom_score_fd, "%d", 0);
+			close(oom_score_fd);
+		}
 
 		ret = setregid(gid, gid);
 		if (ret < 0)
