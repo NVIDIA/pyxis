@@ -25,3 +25,13 @@ load ./common
     [ "${status}" -eq 0 ]
     [ "${lines[-1]}" == "/workspace" ]
 }
+
+@test "default to job workdir" {
+    run_srun pwd
+    job_cwd="${lines[-1]}"
+
+    run_srun --container-image=ubuntu:22.04 --container-mounts $(pwd) pwd
+    container_cwd="${lines[-1]}"
+
+    [ "${container_cwd}" == "${job_cwd}" ]
+}

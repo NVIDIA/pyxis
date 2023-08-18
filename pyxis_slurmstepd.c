@@ -703,6 +703,45 @@ static int container_get_cwd(pid_t pid, struct container *container)
 	return (0);
 }
 
+static int container_set_cwd(void)
+{
+	int ret;
+	char cwd_path[PATH_MAX];
+
+	/* No need to chdir(root) + chroot(".") since enroot does a pivot_root. */
+	if (context.args->workdir != NULL) {
+		ret = chdir(context.args->workdir);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't chdir to %s: %s", context.args->workdir, strerror(errno));
+			return (-1);
+		}
+		return (0);
+	}
+
+	ret = fchdir(context.container.cwd_fd);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't chdir to container cwd: %s", strerror(errno));
+		return (-1);
+	}
+
+	/*
+	 * If the container's cwd is "/", we assume there was no WORKDIR set in the Docker
+	 * image. We then try to chdir to the job's cwd, to match Slurm's default behavior.
+	 * The cwd might not be accessible in the mount namespace of the container, so
+	 * errors are not fatal.
+	 */
+	if (getcwd(cwd_path, PATH_MAX) == NULL)
+		return (0);
+
+	if (cwd_path[0] == '/' && cwd_path[1] == '\0') {
+		ret = chdir(context.job.cwd);
+		if (ret < 0)
+			slurm_verbose("pyxis: couldn't chdir to job cwd %s: %s", context.job.cwd, strerror(errno));
+	}
+
+	return (0);
+}
+
 static int enroot_create_start_config(char (*path)[PATH_MAX])
 {
 	int ret;
@@ -1241,20 +1280,9 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		goto fail;
 	}
 
-	/* No need to chdir(root) + chroot(".") since enroot does a pivot_root. */
-	if (context.args->workdir != NULL) {
-		ret = chdir(context.args->workdir);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't chdir to %s: %s", context.args->workdir, strerror(errno));
-			goto fail;
-		}
-	} else {
-		ret = fchdir(context.container.cwd_fd);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't chdir to container cwd: %s", strerror(errno));
-			goto fail;
-		}
-	}
+	ret = container_set_cwd();
+	if (ret < 0)
+		goto fail;
 
 	if (!context.job.privileged) {
 		ret = seccomp_set_filter();
