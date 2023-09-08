@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <linux/limits.h>
@@ -1001,7 +1001,10 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		context.container.name = container_name;
 		container_name = NULL;
 	} else {
-		ret = xasprintf(&context.container.name, "pyxis_%u.%u", context.job.jobid, context.job.stepid);
+		if (context.config.container_scope == SCOPE_JOB)
+			ret = xasprintf(&context.container.name, "pyxis_%u_%u.%u", context.job.jobid, context.job.jobid, context.job.stepid);
+		else
+			ret = xasprintf(&context.container.name, "pyxis_%u.%u", context.job.jobid, context.job.stepid);
 		if (ret < 0)
 			goto fail;
 		context.container.temporary_rootfs = true;

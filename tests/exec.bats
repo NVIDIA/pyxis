@@ -30,6 +30,19 @@ function teardown() {
     run_srun --overlap --container-name=exec-test findmnt /mymnt
 }
 
+@test "attach to running unnamed container" {
+    run_srun sh -c 'echo $SLURM_JOB_ID'
+    job_id="${lines[-1]}"
+    run_srun sh -c 'echo $SLURM_STEP_ID'
+    step_id="${lines[-1]}"
+    container_name="${job_id}.$((step_id + 1))"
+
+    run_srun --container-image=ubuntu:22.04 sh -c 'sleep 10s' &
+
+    sleep 3s
+    run_srun --overlap --container-name="${container_name}" true
+}
+
 @test "attach to running container after directory change" {
     run_srun --container-image=ubuntu:20.04 --container-name=exec-test bash -c "cd /var && sleep 30s" &
 

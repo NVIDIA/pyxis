@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <errno.h>
@@ -54,7 +54,7 @@ static int pyxis_container_cleanup(uid_t uid, gid_t gid, uint32_t jobid)
 	int ret;
 	FILE *fp = NULL;
 	char *name = NULL;
-	uint32_t id, stepid;
+	uint32_t id;
 	int n;
 	int rv = -1;
 
@@ -67,8 +67,7 @@ static int pyxis_container_cleanup(uid_t uid, gid_t gid, uint32_t jobid)
 
 	while ((name = get_line_from_file(fp)) != NULL) {
 		/* Remove named and unnamed pyxis containers for this job */
-		if (sscanf(name, "pyxis_%u.%u%n", &id, &stepid, &n) == 2 ||
-		    sscanf(name, "pyxis_%u_%*s%n", &id, &n) == 1) {
+		if (sscanf(name, "pyxis_%u_%*s%n", &id, &n) == 1) {
 			if (strlen(name) != n || id != jobid)
 				continue;
 
