@@ -24,7 +24,7 @@ int pyxis_slurmd_init(spank_t sp, int ac, char **av)
 	mode_t mask;
 	int rv = -1;
 
-	slurm_info("pyxis: version v%s", PYXIS_VERSION);
+	slurm_info("pyxis: version v"PYXIS_VERSION);
 
 	ret = pyxis_config_parse(&config, ac, av);
 	if (ret < 0) {
