@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: NVIDIA CORPORATION <cudatools@nvidia.com>
 Standards-Version: 4.1.4
 Homepage: https://github.com/NVIDIA/pyxis
-Build-Depends: debhelper (>= 10), libslurm-dev
+Build-Depends: debhelper (>= 10), slurm-smd-dev | libslurm-dev
 
 Package: nvslurm-plugin-pyxis
 Architecture: any
