@@ -283,6 +283,36 @@ static int enroot_new_log(void)
 	return (context.log_fd);
 }
 
+/* We do not want to inherit any environment variable from slurmstepd, except PATH */
+static int slurm_clear_env(void)
+{
+	int rv = -1;
+	const char *p;
+	char *saved_path = NULL;
+
+	/* It's unclear if the pointer returned by getenv(3) will always persist after clearenv(3), so make a copy. */
+	p = getenv("PATH");
+	if (p != NULL) {
+		saved_path = strdup(p);
+		if (saved_path == NULL)
+			goto fail;
+	}
+
+	if (clearenv() != 0)
+		goto fail;
+
+	if (saved_path != NULL) {
+		if (setenv("PATH", saved_path, 1) < 0)
+			goto fail;
+	}
+
+	rv = 0;
+
+fail:
+	free(saved_path);
+	return (rv);
+}
+
 /*
  * List of environment variables that should not be passed from the Slurm job to enroot.
  */
@@ -345,6 +375,9 @@ static int enroot_import_job_env(char **env)
 
 static int enroot_set_env(void)
 {
+	if (slurm_clear_env() < 0)
+		return (-1);
+
 	if (enroot_import_job_env(context.job.environ) < 0)
 		return (-1);
 
