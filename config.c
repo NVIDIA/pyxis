@@ -33,7 +33,7 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	 */
 	strcpy(config->runtime_path, "/run/pyxis");
 	config->execute_entrypoint = false;
-	config->container_scope = SCOPE_JOB;
+	config->container_scope = SCOPE_GLOBAL;
 	config->sbatch_support = true;
 
 	for (int i = 0; i < ac; ++i) {
