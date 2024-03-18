@@ -729,7 +729,7 @@ static int container_get_cwd(pid_t pid, struct container *container)
 
 	container->cwd_fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (container->cwd_fd < 0) {
-		slurm_error("pyxis: couldn't open cwd fd");
+		slurm_error("pyxis: couldn't open cwd fd: %s", strerror(errno));
 		return (-1);
 	}
 
