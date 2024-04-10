@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2024, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <linux/limits.h>
@@ -1338,21 +1338,22 @@ static int enroot_container_export(void)
 	return (0);
 }
 
-static int enroot_export_once(struct container *container, struct shared_memory *shm)
+static int enroot_export(void)
 {
 	int ret;
 
-	if (atomic_fetch_add(&context.shm->completed_tasks, 1) == context.job.local_task_count - 1) {
-		/* Check if job was interrupted before it fully started. */
-		if (context.shm->started_tasks != context.job.local_task_count)
-			return (0);
+	if (context.container.save_path == NULL)
+		return (0);
 
-		ret = enroot_container_export();
-		if (ret < 0)
-			return (-1);
+	/* Check if job was interrupted before it fully started. */
+	if (context.shm->started_tasks != context.job.local_task_count)
+		return (0);
 
-		slurm_spank_log("pyxis: exported container %s to %s", context.container.name, context.container.save_path);
-	}
+	ret = enroot_container_export();
+	if (ret < 0)
+		return (-1);
+
+	slurm_spank_log("pyxis: exported container %s to %s", context.container.name, context.container.save_path);
 
 	return (0);
 }
@@ -1365,18 +1366,29 @@ int slurm_spank_task_exit(spank_t sp, int ac, char **av)
 	if (!context.enabled)
 		return (0);
 
-	if (context.container.save_path == NULL)
-		return (0);
+	rv = 0;
+	/* Last task to exit does the container export and/or container cleanup, if needed. */
+	if (atomic_fetch_add(&context.shm->completed_tasks, 1) == context.job.local_task_count - 1) {
+		ret = enroot_export();
+		if (ret < 0) {
+			slurm_error("pyxis: failed to export container %s to %s", context.container.name, context.container.save_path);
+			rv = -1;
+		}
 
-	ret = enroot_export_once(&context.container, context.shm);
-	if (ret < 0) {
-		slurm_error("pyxis: failed to export container %s to %s", context.container.name, context.container.save_path);
-		goto fail;
+		/* Need to cleanup the temporary squashfs if the task running "enroot import" was interrupted. */
+		if (context.container.temporary_squashfs && context.container.squashfs_path != NULL)
+			unlink(context.container.squashfs_path);
+
+		if (context.container.temporary_rootfs) {
+			slurm_info("pyxis: removing container filesystem: %s", context.container.name);
+
+			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
+			if (ret < 0)
+				slurm_info("pyxis: failed to remove container filesystem: %s", context.container.name);
+		}
+
 	}
 
-	rv = 0;
-
-fail:
 	return (rv);
 }
 
@@ -1384,21 +1396,6 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
 	int rv = 0;
-
-	/* Need to cleanup the temporary squashfs if the task running "enroot import" was interrupted. */
-	if (context.container.temporary_squashfs && context.container.squashfs_path != NULL)
-	        unlink(context.container.squashfs_path);
-
-	if (context.container.temporary_rootfs) {
-		slurm_info("pyxis: removing container filesystem: %s", context.container.name);
-
-		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
-		if (ret < 0) {
-			slurm_error("pyxis: failed to remove container filesystem: %s", context.container.name);
-			enroot_print_log_ctx();
-			rv = -1;
-		}
-	}
 
 	free(context.container.name);
 	free(context.container.squashfs_path);
