@@ -26,6 +26,12 @@ load ./common
     run_srun --container-image=ubuntu:22.04 grep 'Ubuntu 22.04' /etc/os-release
 }
 
+@test "Docker Hub ubuntu:24.04" {
+    run_srun --container-image=ubuntu:24.04 grep 'Ubuntu 24.04' /etc/os-release
+    # Test for https://github.com/NVIDIA/enroot/commit/f0552fb7ce3798d02e8838db2f9402aa2094b348
+    run_srun --container-image=ubuntu:24.04 --container-remap-root bash -c 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata'
+}
+
 @test "Docker Hub centos:5" {
     run_srun --container-image=centos:5 grep 'CentOS release 5.11 (Final)' /etc/redhat-release
 }
