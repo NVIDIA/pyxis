@@ -10,16 +10,13 @@ function teardown() {
     enroot_cleanup nginx-test || true
 }
 
-@test "--container-entrypoint: jrottenberg/ffmpeg" {
+@test "--container-entrypoint: docker:dind" {
     if srun bash -c '[ -f /etc/enroot/entrypoint ]'; then
 	skip "entrypoint disabled by enroot"
     fi
 
-    # This container image uses 'ENTRYPOINT ["ffmpeg"]'
-    run_srun_unchecked --container-entrypoint --container-image jrottenberg/ffmpeg:3.2-alpine true
-    [ "${status}" -ne 0 ]
-    run_srun_unchecked --no-container-entrypoint --container-image jrottenberg/ffmpeg:3.2-alpine true
-    [ "${status}" -eq 0 ]
+    run_srun --container-image=docker:26.1.0-dind-rootless --container-entrypoint sh -c '[ -n "${DOCKER_HOST}" ]'
+    run_srun --container-image=docker:26.1.0-dind-rootless --no-container-entrypoint sh -c '[ -z "${DOCKER_HOST}" ]'
 }
 
 @test "manual execution of entrypoint" {
