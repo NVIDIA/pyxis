@@ -640,8 +640,11 @@ static int enroot_container_create(void)
 				goto fail;
 		}
 
-		/* Be more verbose if there is a single task in the job, it might be interactive */
-		if (context.job.total_task_count == 1)
+		/*
+		 * Be more verbose if there is a single task in the job (it might be interactive),
+		 * or if we are executing the batch step (S_JOB_TOTAL_TASK_COUNT=0)
+		 */
+		if (context.job.total_task_count == 0 || context.job.total_task_count == 1)
 			slurm_spank_log("pyxis: importing docker image: %s", context.args->image);
 
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", context.container.squashfs_path, enroot_uri, NULL });
