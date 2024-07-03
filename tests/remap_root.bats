@@ -35,9 +35,9 @@ load ./common
 }
 
 @test "yum install file" {
-    run_srun --container-remap-root --container-image=centos:7 bash -c 'yum install -y file'
+    run_srun --container-remap-root --container-image=almalinux:9 bash -c 'yum install -y file'
 }
 
 @test "yum install emacs-nox" {
-    run_srun --container-remap-root --container-image=centos:7 bash -c 'yum install -y emacs-nox'
+    run_srun --container-remap-root --container-image=almalinux:9 bash -c 'yum install -y emacs-nox'
 }
