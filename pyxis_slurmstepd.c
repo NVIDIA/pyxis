@@ -510,6 +510,7 @@ static int read_proc_environ(pid_t pid, char **result, size_t *size)
 	int fd = -1;
 	char *buf = NULL;
 	size_t len = 0, capacity = 1024;
+	ssize_t n;
 	char *new_buf = NULL;
 	int rv = -1;
 
@@ -525,8 +526,8 @@ static int read_proc_environ(pid_t pid, char **result, size_t *size)
 	if (buf == NULL)
 		goto fail;
 
-	while ((ret = read(fd, buf + len, capacity - len)) > 0) {
-		len += ret;
+	while ((n = read(fd, buf + len, capacity - len)) > 0) {
+		len += n;
 
 		if (capacity - len == 0) {
 			/* Grow buffer. */
@@ -540,7 +541,7 @@ static int read_proc_environ(pid_t pid, char **result, size_t *size)
 		}
 	}
 
-	if (ret < 0)
+	if (n < 0)
 		goto fail;
 
 	/* From man 5 proc, there might not be a null byte at the end. */
