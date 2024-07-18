@@ -21,6 +21,7 @@ struct plugin_args {
 	int mount_home;
 	int remap_root;
 	int entrypoint;
+	int entrypoint_log;
 	int writable;
 	char **env_vars;
 	size_t env_vars_len;

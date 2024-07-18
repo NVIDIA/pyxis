@@ -89,6 +89,9 @@ $ srun --help
       --no-container-entrypoint
                               [pyxis] do not execute the entrypoint from the
                               container image
+
+      --container-entrypoint-log
+                              [pyxis] print the output of the entrypoint script
       --container-writable    [pyxis] make the container filesystem writable
       --container-readonly    [pyxis] make the container filesystem read-only
 

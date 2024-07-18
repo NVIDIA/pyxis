@@ -6,6 +6,7 @@
 #define ENROOT_H_
 
 #include <sys/types.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 typedef int (*child_cb)(void);
@@ -19,6 +20,6 @@ int enroot_exec_wait(uid_t uid, gid_t gid, int log_fd,
 FILE *enroot_exec_output(uid_t uid, gid_t gid,
 			 child_cb callback, char *const argv[]);
 
-void enroot_print_log(int log_fd);
+void enroot_print_log(int log_fd, bool error);
 
 #endif /* ENROOT_H_ */

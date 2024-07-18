@@ -47,3 +47,15 @@ function teardown() {
     run_srun --container-image=docker:26.1.0-dind-rootless --container-entrypoint --container-env=DOCKER_TLS_VERIFY sh -c 'echo ${DOCKER_HOST}'
     [ "${lines[-1]}" == "tcp://docker:2376" ]
 }
+
+@test "--container-entrypoint-log: nvidia/cuda" {
+    if srun bash -c '[ -f /etc/enroot/entrypoint ]'; then
+	skip "entrypoint disabled by enroot"
+    fi
+
+    run_srun --container-image=nvidia/cuda:12.5.1-runtime-ubuntu24.04 --container-entrypoint true
+    ! grep -q "== CUDA ==" <<< "${output}"
+
+    run_srun --container-image=nvidia/cuda:12.5.1-runtime-ubuntu24.04 --container-entrypoint --container-entrypoint-log true
+    grep -q "== CUDA ==" <<< "${output}"
+}

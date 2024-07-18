@@ -133,7 +133,7 @@ int enroot_exec_wait(uid_t uid, gid_t gid, int log_fd,
 	return (0);
 }
 
-void enroot_print_log(int log_fd)
+void enroot_print_log(int log_fd, bool error)
 {
 	int ret;
 	FILE *fp;
@@ -151,9 +151,13 @@ void enroot_print_log(int log_fd)
 		return;
 	}
 
-	slurm_error("pyxis: printing enroot log file:");
+	if (error)
+		slurm_error("pyxis: printing enroot log file:");
 	while ((line = get_line_from_file(fp)) != NULL) {
-		slurm_error("pyxis:     %s", line);
+		if (error)
+			slurm_error("pyxis:     %s", line);
+		else
+			slurm_spank_log("%s", line);
 		free(line);
 	}
 
@@ -176,7 +180,7 @@ FILE *enroot_exec_output(uid_t uid, gid_t gid,
 	ret = enroot_exec_wait(uid, gid, log_fd, callback, argv);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't execute enroot command");
-		enroot_print_log(log_fd);
+		enroot_print_log(log_fd, true);
 		goto fail;
 	}
 

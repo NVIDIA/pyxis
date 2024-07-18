@@ -429,10 +429,10 @@ static FILE *enroot_exec_output_ctx(char *const argv[])
 	return enroot_exec_output(context.job.uid, context.job.gid, enroot_set_env, argv);
 }
 
-static void enroot_print_log_ctx(void)
+static void enroot_print_log_ctx(bool error)
 {
 	if (context.log_fd >= 0) {
-		enroot_print_log(context.log_fd);
+		enroot_print_log(context.log_fd, error);
 		xclose(context.log_fd);
 		context.log_fd = -1;
 	}
@@ -651,7 +651,7 @@ static int enroot_container_create(void)
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", context.container.squashfs_path, enroot_uri, NULL });
 		if (ret < 0) {
 			slurm_error("pyxis: failed to import docker image");
-			enroot_print_log_ctx();
+			enroot_print_log_ctx(true);
 			goto fail;
 		}
 		slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
@@ -662,7 +662,7 @@ static int enroot_container_create(void)
 	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, context.container.squashfs_path, NULL });
 	if (ret < 0) {
 		slurm_error("pyxis: failed to create container filesystem");
-		enroot_print_log_ctx();
+		enroot_print_log_ctx(true);
 		goto fail;
 	}
 
@@ -885,7 +885,9 @@ static pid_t enroot_container_start(void)
 
 fail:
 	if (rv == -1)
-		enroot_print_log_ctx();
+		enroot_print_log_ctx(true);
+	else if (pyxis_execute_entrypoint() && context.args->entrypoint_log == 1)
+		enroot_print_log_ctx(false);
 	if (conf_file[0] != '\0')
 		unlink(conf_file);
 
@@ -1352,7 +1354,7 @@ static int enroot_container_export(void)
 
 	ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "export", "-f", "-o", path, context.container.name, NULL });
 	if (ret < 0) {
-		enroot_print_log_ctx();
+		enroot_print_log_ctx(true);
 		return (-1);
 	}
 

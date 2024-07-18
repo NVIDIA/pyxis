@@ -20,6 +20,7 @@ static struct plugin_args pyxis_args = {
 	.mount_home = -1,
 	.remap_root = -1,
 	.entrypoint = -1,
+	.entrypoint_log = -1,
 	.writable   = -1,
 	.env_vars = NULL,
 	.env_vars_len = 0,
@@ -33,6 +34,7 @@ static int spank_option_container_save(int val, const char *optarg, int remote);
 static int spank_option_container_mount_home(int val, const char *optarg, int remote);
 static int spank_option_container_remap_root(int val, const char *optarg, int remote);
 static int spank_option_container_entrypoint(int val, const char *optarg, int remote);
+static int spank_option_container_entrypoint_log(int val, const char *optarg, int remote);
 static int spank_option_container_writable(int val, const char *optarg, int remote);
 static int spank_option_container_env(int val, const char *optarg, int remote);
 
@@ -113,6 +115,13 @@ struct spank_option spank_opts[] =
 		"[pyxis] do not execute the entrypoint from the container image"
 		,
 		0, 0, spank_option_container_entrypoint
+	},
+	{
+		"container-entrypoint-log",
+		NULL,
+		"[pyxis] print the output of the entrypoint script"
+		,
+		0, 1, spank_option_container_entrypoint_log
 	},
 	{
 		"container-writable",
@@ -416,6 +425,13 @@ static int spank_option_container_entrypoint(int val, const char *optarg, int re
 	}
 
 	pyxis_args.entrypoint = val;
+
+	return (0);
+}
+
+static int spank_option_container_entrypoint_log(int val, const char *optarg, int remote)
+{
+	pyxis_args.entrypoint_log = val;
 
 	return (0);
 }
