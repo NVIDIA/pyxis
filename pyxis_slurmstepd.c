@@ -792,6 +792,23 @@ static int enroot_create_start_config(char (*path)[PATH_MAX])
 			goto fail;
 	}
 
+	if (context.args->env_vars_len > 0) {
+		ret = fprintf(f, "environ() {\n");
+		if (ret < 0)
+			goto fail;
+
+		for (int i = 0; i < context.args->env_vars_len; ++i) {
+			ret = fprintf(f, "\t[ -n \"${%1$s-}\" ] && echo \"%1$s=${%1$s}\" || :\n",
+				      context.args->env_vars[i]);
+			if (ret < 0)
+				goto fail;
+		}
+
+		ret = fprintf(f, "}\n");
+		if (ret < 0)
+			goto fail;
+	}
+
 	/* print contents */
 	if (fseek(f, 0, SEEK_SET) == 0) {
 		slurm_verbose("pyxis: enroot start configuration script:");

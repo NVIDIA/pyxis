@@ -29,3 +29,21 @@ function teardown() {
     run_srun --container-name nginx-test cat /etc/nginx/conf.d/default.conf
     grep -q "listen  \[::]\:80;" <<< "${output}"
 }
+
+@test "--container-entrypoint and --container-env" {
+    if srun bash -c '[ -f /etc/enroot/entrypoint ]'; then
+        skip "entrypoint disabled by enroot"
+    fi
+
+    # https://github.com/docker-library/docker/blob/75c73110b6ee739dab28c30b757eec51484968c1/26/cli/docker-entrypoint.sh#L30-L36
+    run_srun --container-image=docker:26.1.0-dind-rootless --container-entrypoint sh -c 'echo ${DOCKER_HOST}'
+    [ "${lines[-1]}" == "tcp://docker:2375" ]
+
+    export DOCKER_TLS_VERIFY=1
+    run_srun --container-image=docker:26.1.0-dind-rootless --container-entrypoint sh -c 'echo ${DOCKER_HOST}'
+    # The variable is only passed to the entrypoint when using --container-env.
+    [ "${lines[-1]}" == "tcp://docker:2375" ]
+
+    run_srun --container-image=docker:26.1.0-dind-rootless --container-entrypoint --container-env=DOCKER_TLS_VERIFY sh -c 'echo ${DOCKER_HOST}'
+    [ "${lines[-1]}" == "tcp://docker:2376" ]
+}

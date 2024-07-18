@@ -56,6 +56,11 @@ load ./common
 }
 
 @test "--container-env overriding container variable" {
+    # When --container-env is referencing an unset variable, the container variable will not be overriden.
+    unset CUDA_VERSION
+    run_srun --no-container-mount-home --container-image=nvidia/cuda:11.8.0-base-ubuntu22.04 --container-env CUDA_VERSION sh -c 'echo $CUDA_VERSION'
+    [ "${lines[-1]}" == "11.8.0" ]
+
     export CUDA_VERSION=12.0.0
     export LD_LIBRARY_PATH=/usr/local/cuda/lib64
 
