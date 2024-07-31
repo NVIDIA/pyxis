@@ -140,9 +140,9 @@ struct spank_option spank_opts[] =
 	{
 		"container-env",
 		"NAME[,NAME...]",
-		"[pyxis] names of environment variables to override with the host environment and set at the entrypoint."
-		"By default, all exported host environment variables are set in the container after the entrypoint is run,"
-		"but their existing values in the image take precedence;"
+		"[pyxis] names of environment variables to override with the host environment and set at the entrypoint. "
+		"By default, all exported host environment variables are set in the container after the entrypoint is run, "
+		"but their existing values in the image take precedence; "
 		"the variables specified with this flag are preserved from the host and set before the entrypoint runs",
 		1, 0, spank_option_container_env
 	},
