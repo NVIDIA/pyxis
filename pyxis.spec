@@ -36,6 +36,9 @@ cluster users to run containerized tasks through the srun command.
 
 
 %changelog
+* Wed Jul 31 2024 NVIDIA CORPORATION <cudatools@nvidia.com> - 0.20.0-1
+- Release v0.20.0
+
 * Fri Apr 12 2024 NVIDIA CORPORATION <cudatools@nvidia.com> - 0.19.0-1
 - Release v0.19.0
 
