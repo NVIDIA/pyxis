@@ -383,6 +383,11 @@ static int spank_option_container_save(int val, const char *optarg, int remote)
 		return (-1);
 	}
 
+	if (optarg[strlen(optarg) - 1] == '/') {
+		slurm_error("pyxis: --container-save: target is a directory");
+		return (-1);
+	}
+
 	/* Slurm can call us twice with the same value, check if it's a different value than before. */
 	if (pyxis_args.container_save != NULL) {
 		if (strcmp(pyxis_args.container_save, optarg) == 0)

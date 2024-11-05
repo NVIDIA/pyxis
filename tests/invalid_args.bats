@@ -72,3 +72,14 @@ load ./common
     run_srun_unchecked --container-env FOO, --container-image=ubuntu:22.04 true
     [ "${status}" -ne 0 ]
 }
+
+@test "invalid arg: --container-save=<directory>" {
+    run_srun_unchecked --container-save=/tmp/ --container-image=ubuntu:24.04 true
+    [ "${status}" -ne 0 ]
+
+    run_srun_unchecked --container-save=/ --container-image=ubuntu:24.04 true
+    [ "${status}" -ne 0 ]
+
+    run_srun_unchecked --container-save=./ --container-image=ubuntu:24.04 true
+    [ "${status}" -ne 0 ]
+}
