@@ -25,6 +25,7 @@ struct plugin_args {
 	int writable;
 	char **env_vars;
 	size_t env_vars_len;
+	bool keep_squashfs;
 };
 
 struct plugin_args *pyxis_args_register(spank_t sp);

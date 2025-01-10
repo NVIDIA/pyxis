@@ -24,6 +24,7 @@ static struct plugin_args pyxis_args = {
 	.writable   = -1,
 	.env_vars = NULL,
 	.env_vars_len = 0,
+	.keep_squashfs = false,
 };
 
 static int spank_option_image(int val, const char *optarg, int remote);
@@ -37,6 +38,7 @@ static int spank_option_container_entrypoint(int val, const char *optarg, int re
 static int spank_option_container_entrypoint_log(int val, const char *optarg, int remote);
 static int spank_option_container_writable(int val, const char *optarg, int remote);
 static int spank_option_container_env(int val, const char *optarg, int remote);
+static int spank_option_keep_squashfs(int val, const char *optarg, int remote);
 
 struct spank_option spank_opts[] =
 {
@@ -145,6 +147,12 @@ struct spank_option spank_opts[] =
 		"but their existing values in the image take precedence; "
 		"the variables specified with this flag are preserved from the host and set before the entrypoint runs",
 		1, 0, spank_option_container_env
+	},
+	{
+		"keep-squashfs",
+		NULL,
+		"[pyxis] keep squashfs files after enroot import",
+		0, 0, spank_option_keep_squashfs
 	},
 	SPANK_OPTIONS_TABLE_END
 };
@@ -493,6 +501,14 @@ fail:
 
 	return (rv);
 }
+
+static int spank_option_keep_squashfs(int val, const char *optarg, int remote)
+{
+	pyxis_args.keep_squashfs = true;
+
+	return (0);
+}
+
 
 struct plugin_args *pyxis_args_register(spank_t sp)
 {

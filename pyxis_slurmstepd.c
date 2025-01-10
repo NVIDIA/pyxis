@@ -1400,7 +1400,7 @@ int slurm_spank_task_exit(spank_t sp, int ac, char **av)
 
 		/* Need to cleanup the temporary squashfs if the task running "enroot import" was interrupted. */
 		if (context.container.temporary_squashfs && context.container.squashfs_path != NULL)
-			unlink(context.container.squashfs_path);
+			// unlink(context.container.squashfs_path);
 
 		if (context.container.temporary_rootfs) {
 			slurm_info("pyxis: removing container filesystem: %s", context.container.name);
