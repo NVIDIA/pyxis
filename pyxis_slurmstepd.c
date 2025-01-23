@@ -4,6 +4,7 @@
 
 #include <linux/limits.h>
 
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -36,6 +37,8 @@ struct container {
 	char *name;
 	char *squashfs_path;
 	char *save_path;
+	char *lock_file;
+	bool reuse_squashfs;
 	bool reuse_rootfs;
 	bool reuse_ns;
 	bool temporary_squashfs;
@@ -52,6 +55,7 @@ struct job_info {
 	bool privileged;
 	uint32_t jobid;
 	uint32_t stepid;
+	uint32_t nodeid;
 	uint32_t local_task_count;
 	uint32_t total_task_count;
 	char **environ;
@@ -86,16 +90,19 @@ static struct plugin_context context = {
 	.job = {
 		.uid = -1, .gid = -1, .privileged = false,
 		.jobid = 0, .stepid = 0,
-		.local_task_count = 0, .total_task_count = 0,
+		.local_task_count = 0, .total_task_count = 0, .nodeid = 0,
 		.environ = NULL, .cwd = { 0 }
 	},
 	.container = {
-		.name = NULL, .squashfs_path = NULL, .save_path = NULL,
-		.reuse_rootfs = false, .reuse_ns = false, .temporary_squashfs = false, .temporary_rootfs = false,
+		.name = NULL, .squashfs_path = NULL, .save_path = NULL, .lock_file = NULL,
+		.reuse_squashfs = false, .reuse_rootfs = false, .reuse_ns = false, .temporary_squashfs = false, .temporary_rootfs = false,
 		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1
 	},
 	.user_init_rv = 0,
 };
+
+int create_enroot_lock_file(void);
+int file_exists(char* file_path);
 
 static bool pyxis_execute_entrypoint(void)
 {
@@ -163,6 +170,12 @@ static int job_get_info(spank_t sp, struct job_info *job)
 		goto fail;
 	}
 
+	rc = spank_get_item(sp, S_JOB_NODEID, &job->nodeid);
+	if (rc != ESPANK_SUCCESS) {
+		slurm_error("pyxis: couldn't get job node id: %s", spank_strerror(rc));
+		goto fail;
+	}
+
 	/* This should probably be added to the API as a spank_item */
 	rc = spank_getenv(sp, "PWD", job->cwd, sizeof(job->cwd));
 	if (rc != ESPANK_SUCCESS)
@@ -171,7 +184,7 @@ static int job_get_info(spank_t sp, struct job_info *job)
 	rc = spank_getenv(sp, "ENROOT_ALLOW_SUPERUSER", allow_superuser, sizeof(allow_superuser));
 	if (rc == ESPANK_SUCCESS) {
 		if (job->uid == 0 && strcasecmp(allow_superuser, "no") != 0 && strcasecmp(allow_superuser, "false") != 0 &&
-		    strcasecmp(allow_superuser, "n") != 0 && strcasecmp(allow_superuser, "f") != 0) {
+			strcasecmp(allow_superuser, "n") != 0 && strcasecmp(allow_superuser, "f") != 0) {
 			job->privileged = true;
 		}
 	}
@@ -251,6 +264,85 @@ static int enroot_create_user_runtime_dir(void)
 	return (0);
 }
 
+/* As root, create the per-user directory where squashfs files are stored and later could be reused. */
+static int enroot_create_image_save_dir(char *path) 
+{
+	int ret;
+	char uid_dir_path[PATH_MAX];
+
+	if (path == NULL || strlen(path) == 0) {
+		slurm_error("pyxis: path is empty");
+		return (-1);
+	}
+
+	/* In case it's a dir, we create per user folder */
+	if (path[strlen(path) - 1] == '/') {
+		ret = snprintf(uid_dir_path, sizeof(uid_dir_path), "%s%u/", path, context.job.uid);
+		if (ret < 0 || ret >= sizeof(uid_dir_path)) {
+			slurm_error("pyxis: too long path to save image: %s", path);
+			return (-1);
+		}
+		path = uid_dir_path;
+	}
+
+	/* Start from 1 to avoid first / */
+	for (size_t i = 1; i < strlen(path); i++) {
+		if (path[i] != '/') {
+			continue;
+		}
+
+		char temp_path[i + 1];
+		strncpy(temp_path, path, i);
+		temp_path[i] = '\0';
+
+		ret = mkdir(temp_path, 0700);
+		if (ret < 0 && errno != EEXIST) {
+			slurm_error("pyxis: couldn't mkdir %s: %s", temp_path, strerror(errno));
+			return (-1);
+		} else if (ret < 0 && errno == EEXIST) {
+			continue;
+		}
+
+		ret = chown(temp_path, context.job.uid, context.job.gid);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't chown %s: %s", temp_path, strerror(errno));
+			return (-1);
+		}
+	}
+
+	return (0);
+}
+
+static char* path_dir(const char *path)
+{
+	if (path == NULL) {
+		return NULL;
+	}
+
+	int last_i = -1;
+	size_t len = strlen(path);
+
+	for (size_t i = 0; i < len; i++) {
+		if (path[i] == '/') {
+			last_i = i;
+		}
+	}
+
+	if (last_i == -1) {
+		return strdup("");
+	}
+
+	char *dir = (char *)malloc(last_i + 2);
+	if (!dir) {
+		return NULL;
+	}
+
+	strncpy(dir, path, last_i + 1);
+	dir[last_i + 1] = '\0';
+
+	return dir;
+}
+
 int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 {
 	int ret;
@@ -264,9 +356,25 @@ int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 	if (ret < 0)
 		return (-1);
 
+	/* Initialise default values from config if args were not passed */
+	if (context.args->image_shared == -1) {
+		context.args->image_shared = context.config.container_image_shared;
+	}
+	if (strlen(context.config.container_image_save) > 0 && context.args->image_save == NULL) {
+		context.args->image_save = strdup(context.config.container_image_save);
+	}
+
 	ret = enroot_create_user_runtime_dir();
 	if (ret < 0)
 		return (-1);
+
+	if (context.args->image_save != NULL) {
+		ret = enroot_create_image_save_dir(context.args->image_save);
+		if (ret < 0){
+			slurm_error("pyxis: unable to create directory for --container-image-save: %s", strerror(errno));
+			return (-1);
+		}
+	}
 
 	return (0);
 }
@@ -275,10 +383,14 @@ static int enroot_new_log(void)
 {
 	xclose(context.log_fd);
 
-	/* We can use CLOEXEC here since we dup2(2) this file descriptor when needed. */
-	context.log_fd = pyxis_memfd_create("enroot-log", MFD_CLOEXEC);
-	if (context.log_fd < 0)
-		slurm_info("pyxis: couldn't create in-memory log file: %s", strerror(errno));
+	if (context.config.expose_enroot_logs) {
+		context.log_fd = STDERR_FILENO;
+	} else {
+		/* We can use CLOEXEC here since we dup2(2) this file descriptor when needed. */
+		context.log_fd = pyxis_memfd_create("enroot-log", MFD_CLOEXEC);
+		if (context.log_fd < 0)
+			slurm_info("pyxis: couldn't create in-memory log file: %s", strerror(errno));
+	}
 
 	return (context.log_fd);
 }
@@ -627,10 +739,13 @@ static int enroot_container_create(void)
 	int ret;
 	char *enroot_uri = NULL;
 	int rv = -1;
+	int fd = -1;
 
-	if (context.container.temporary_squashfs) {
+	if (context.container.temporary_squashfs || 
+		(context.container.reuse_squashfs && !file_exists(context.container.squashfs_path))) {
+		
 		if (strncmp("docker://", context.args->image, sizeof("docker://") - 1) == 0 ||
-		    strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) == 0) {
+			strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) == 0) {
 			enroot_uri = strdup(context.args->image);
 			if (enroot_uri == NULL)
 				goto fail;
@@ -645,16 +760,45 @@ static int enroot_container_create(void)
 		 * Be more verbose if there is a single task in the job (it might be interactive),
 		 * or if we are executing the batch step (S_JOB_TOTAL_TASK_COUNT=0)
 		 */
-		if (context.job.total_task_count == 0 || context.job.total_task_count == 1)
+		if (context.job.total_task_count == 0 || context.job.total_task_count == 1) {
 			slurm_spank_log("pyxis: importing docker image: %s", context.args->image);
-
-		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", context.container.squashfs_path, enroot_uri, NULL });
-		if (ret < 0) {
-			slurm_error("pyxis: failed to import docker image");
-			enroot_print_log_ctx(true);
-			goto fail;
 		}
-		slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
+
+		if (context.args->image_shared == 1) {
+			fd = create_enroot_lock_file();
+			if (fd < 0) {
+				slurm_error("pyxis: unable to create lock file: %s", strerror(errno));
+				goto fail;
+			}
+			ret = flock(fd, LOCK_EX);
+			if (ret < 0) {
+				slurm_spank_log("pyxis-debug: fd %d", fd);
+				slurm_error("pyxis: unable to flock lock file: %s", strerror(errno));
+				goto fail;
+			}
+		}
+
+		if (!file_exists(context.container.squashfs_path)) {
+			if (context.args->image_shared == 1) {
+				slurm_spank_log("pyxis: image shared, pulling image only from one worker, job node id %d", context.job.nodeid);
+			}
+
+			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", context.container.squashfs_path, enroot_uri, NULL });
+			if (ret < 0) {
+				slurm_error("pyxis: failed to import docker image");
+				enroot_print_log_ctx(true);
+				goto fail;
+			}
+			slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
+		}
+
+		if (context.args->image_shared == 1 && file_exists(context.container.lock_file)) {
+			ret = flock(fd, LOCK_UN);
+			if (ret < 0) {
+				slurm_spank_log("pyxis: unable to unlock lock file %s: %s", context.container.lock_file, strerror(errno));
+				goto fail;
+			}
+		}
 	}
 
 	slurm_info("pyxis: creating container filesystem: %s", context.container.name);
@@ -674,6 +818,12 @@ fail:
 		ret = unlink(context.container.squashfs_path);
 		if (ret < 0)
 			slurm_info("pyxis: could not remove squashfs %s: %s", context.container.squashfs_path, strerror(errno));
+	}
+	if (context.args->image_shared == 1 && file_exists(context.container.lock_file)) {
+		ret = unlink(context.container.lock_file);
+		if (ret < 0 && errno != ENOENT) {
+			slurm_spank_log("pyxis: unable to delete lock file %s: %s", context.container.lock_file, strerror(errno));
+		}
 	}
 
 	return (rv);
@@ -1051,7 +1201,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			context.container.reuse_rootfs = true;
 		} else if (context.args->image == NULL) {
 			slurm_error("pyxis: error: a container with name \"%s\" does not exist, and --container-image is not set",
-				    container_name);
+					container_name);
 			goto fail;
 		}
 		context.container.name = container_name;
@@ -1067,7 +1217,26 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	}
 
 	if (!context.container.reuse_rootfs) {
-		if (strspn(context.args->image, "./") > 0) {
+		if (context.args->image_save) {
+			/* `image_save` is either path to directory or path to file where we save squashfs */
+			size_t str_len = strlen(context.args->image_save);
+			
+			if (str_len > 0 && context.args->image_save[str_len - 1] == '/')
+				ret = xasprintf(&context.container.squashfs_path, "%s%d/%s.squashfs",
+					context.args->image_save, context.job.uid, context.args->image);
+			else 
+				ret = xasprintf(&context.container.squashfs_path, "%s", context.args->image_save);
+			if (ret < 0 || ret >= PATH_MAX)
+				goto fail;
+
+			/* Image itself could contain slashes, so we need to ensure about dirs again */
+			ret = enroot_create_image_save_dir(context.container.squashfs_path);
+			if (ret < 0) {
+				goto fail;
+			}
+
+			context.container.reuse_squashfs = true;
+		} else if (strspn(context.args->image, "./") > 0) {
 			/* Assume `image` is a path to a squashfs file. */
 			if (strnlen(context.args->image, PATH_MAX) >= PATH_MAX)
 				goto fail;
@@ -1381,6 +1550,43 @@ static int enroot_export(void)
 	return (0);
 }
 
+int create_enroot_lock_file(void)
+{
+	int ret;
+
+	char* dir = path_dir(context.args->image_save);
+	char lock_file[PATH_MAX];
+	ret = snprintf(lock_file, sizeof(lock_file),
+		"%s%d/%s.lock", context.args->image_save, context.job.uid, context.args->image);
+	if (ret < 0 || ret >= sizeof(lock_file))
+		return (-1);
+
+	int fd = open(lock_file, O_CREAT | O_EXCL | O_RDWR, 0666);
+	if (fd < 0 && errno != EEXIST) {
+		slurm_error("pyxis: not able to create lock file %s: %s", lock_file, strerror(errno));
+		return (-1);
+	} else if (errno == EEXIST) {
+		fd = open(lock_file, O_RDWR);
+		if (fd < 0) {
+			slurm_error("pyxis: not able to open lock file %s: %s", lock_file, strerror(errno));
+			return (-1);
+		}
+
+		slurm_spank_log("pyxis: found existing lock file %s", lock_file);
+	} else {
+		slurm_spank_log("pyxis: created lock file %s", lock_file);
+	}
+
+	context.container.lock_file = strdup(lock_file);
+	free(dir);
+	return fd;
+}
+
+int file_exists(char* file_path) {
+	struct stat buffer;
+	return stat(file_path, &buffer) == 0;
+}
+
 int slurm_spank_task_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
@@ -1423,6 +1629,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	free(context.container.name);
 	free(context.container.squashfs_path);
 	free(context.container.save_path);
+	free(context.container.lock_file);
 
 	if (context.job.environ != NULL) {
 		for (int i = 0; context.job.environ[i] != NULL; ++i)

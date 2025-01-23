@@ -56,6 +56,29 @@ $ srun --help
                               an enroot URI, or a path to a squashfs file on the
                               remote host filesystem.
 
+      --container-image-save=PATH
+                              [pyxis] absolute path to the file or directory
+                              where squashfs files will be stored. If the file
+                              or directory already exists, then it'll be reused.
+                              If the path to the file or directory does not
+                              exist, then it'll be created. Path to directory
+                              ends with / (/path/to/directory/ and
+                              /path/to/file). If this option is fullfilled,
+                              squashfs files will not be removed and will be
+                              reused in the next runs.
+
+      --container-image-shared
+                              [pyxis] pull images only from one of the workers.
+                              Only available when --container-image-save is
+                              specified either in pyxis config or in the args
+                              Should be used if shared filesystem for workers is
+                              used and there's no need to have concurrent
+                              pulling of the same image. Helpful to avoid
+                              throttling in registries. 
+
+      --no-container-image-shared
+                              [pyxis] pull images only from all of the workers.
+
       --container-mounts=SRC:DST[:FLAGS][,SRC:DST...]
                               [pyxis] bind mount[s] inside the container. Mount
                               flags are separated with "+", e.g. "ro+rprivate"

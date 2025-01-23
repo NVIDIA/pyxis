@@ -2,10 +2,15 @@
  * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  */
 
+#include <sys/stat.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wordexp.h>
+
+#include <slurm/spank.h>
 
 #include "common.h"
 

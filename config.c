@@ -35,6 +35,8 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	config->execute_entrypoint = false;
 	config->container_scope = SCOPE_GLOBAL;
 	config->sbatch_support = true;
+	config->expose_enroot_logs = false;
+	config->container_image_shared = -1;
 
 	for (int i = 0; i < ac; ++i) {
 		if (strncmp("runtime_path=", av[i], 13) == 0) {
@@ -69,6 +71,28 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 				return (-1);
 			}
 			config->sbatch_support = ret;
+		} else if (strncmp("expose_enroot_logs=", av[i], 19) == 0) {
+			optarg = av[i] + 19;
+			ret = parse_bool(optarg);
+			if (ret < 0) {
+				slurm_error("pyxis: expose_enroot_logs: invalid value: %s", optarg);
+				return (-1);
+			}
+			config->expose_enroot_logs = ret;
+		} else if (strncmp("container_image_shared=", av[i], 23) == 0) {
+			optarg = av[i] + 23;
+			ret = parse_bool(optarg);
+			if (ret < 0) {
+				slurm_error("pyxis: container_image_shared: invalid value: %s", optarg);
+				return (-1);
+			}
+			config->container_image_shared = ret;
+		} else if (strncmp("container_image_save=", av[i], 21) == 0) {
+			optarg = av[i] + 21;
+			if (memccpy(config->container_image_save, optarg, '\0', sizeof(config->container_image_save)) == NULL) {
+				slurm_error("pyxis: container_image_save: path too long: %s", optarg);
+				return (-1);
+			}
 		} else {
 			slurm_error("pyxis: unknown configuration option: %s", av[i]);
 			return (-1);

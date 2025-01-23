@@ -5,12 +5,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wordexp.h>
 
 #include "args.h"
 #include "common.h"
+#include "config.h"
 
 static struct plugin_args pyxis_args = {
 	.image = NULL,
+	.image_save = NULL,
+	.image_shared = -1,
 	.mounts = NULL,
 	.mounts_len = 0,
 	.workdir = NULL,
@@ -27,6 +31,8 @@ static struct plugin_args pyxis_args = {
 };
 
 static int spank_option_image(int val, const char *optarg, int remote);
+static int spank_option_image_save(int val, const char *optarg, int remote);
+static int spank_option_image_shared(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
 static int spank_option_container_name(int val, const char *optarg, int remote);
@@ -46,6 +52,31 @@ struct spank_option spank_opts[] =
 		"[pyxis] the image to use for the container filesystem. Can be either a docker image given as an enroot URI, "
 			"or a path to a squashfs file on the remote host filesystem.",
 		1, 0, spank_option_image
+	},
+	{
+		"container-image-save",
+		"PATH",
+		"[pyxis] absolute path to the file or directory where squashfs files will be stored. "
+		"If the file or directory already exists, then it'll be reused. "
+		"If the path to the file or directory does not exist, then it'll be created. "
+		"Path to directory ends with / (/path/to/directory/ and /path/to/file). "
+		"If this option is fullfilled, squashfs files will not be removed and will be reused in the next runs.",
+		1, 0, spank_option_image_save
+	},
+	{
+		"container-image-shared",
+		NULL,
+		"[pyxis] pull images only from one of the workers. "
+		"Only available when --container-image-save is specified either in pyxis config or in the args "
+		"Should be used if shared filesystem for workers is used and there's no need to have concurrent pulling "
+		"of the same image. Helpful to avoid throttling in registries. ",
+		0, 1, spank_option_image_shared,
+	},
+	{
+		"no-container-image-shared",
+		NULL,
+		"[pyxis] pull images only from all of the workers.",
+		0, 0, spank_option_image_shared,
 	},
 	{
 		"container-mounts",
@@ -494,6 +525,38 @@ fail:
 	return (rv);
 }
 
+static int spank_option_image_save(int val, const char *optarg, int remote)
+{
+	if (optarg == NULL || *optarg == '\0') {
+		slurm_error("pyxis: --container-image-save: argument required");
+		return (-1);
+	}
+
+	/* Slurm can call us twice with the same value, check if it's a different value than before. */
+	if (pyxis_args.image_save != NULL && strcmp(pyxis_args.image_save, optarg) != 0) {
+		slurm_error("pyxis: --container-image-save specified multiple times");
+		return (-1);
+	}
+
+	pyxis_args.image_save = strdup(optarg);
+
+	return (0);
+}
+
+
+
+static int spank_option_image_shared(int val, const char *optarg, int remote)
+{
+	if (pyxis_args.image_shared != -1 && pyxis_args.image_shared != val) {
+		slurm_error("pyxis: both --container-image-shared and --no-container-image-shared were specified");
+		return (-1);
+	}
+
+	pyxis_args.image_shared = val;
+
+	return (0);
+}
+
 struct plugin_args *pyxis_args_register(spank_t sp)
 {
 	spank_err_t rc;
@@ -528,9 +591,30 @@ bool pyxis_args_enabled(void)
 	return (true);
 }
 
+bool pyxis_args_valid(struct plugin_config config)
+{
+	char* image_save = pyxis_args.image_save;
+	if (image_save == NULL && strlen(config.container_image_save) != 0) {
+		image_save = config.container_image_save;
+	}
+
+	int image_shared = pyxis_args.image_shared;
+	if (image_shared == -1 && config.container_image_shared != -1) {
+		image_shared = config.container_image_shared;
+	}
+
+	if (image_shared && image_save == NULL) {
+		slurm_error("pyxis: --container-image-shared is set without --container-image-save");
+		return (false);
+	}
+
+	return (true);
+}
+
 void pyxis_args_free(void)
 {
 	free(pyxis_args.image);
+	free(pyxis_args.image_save);
 	remove_all_mounts();
 	free(pyxis_args.workdir);
 	free(pyxis_args.container_name);
