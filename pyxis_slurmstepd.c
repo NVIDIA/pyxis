@@ -315,32 +315,18 @@ static int enroot_create_image_save_dir(char *path)
 
 static char* path_dir(const char *path)
 {
-	if (path == NULL) {
-		return NULL;
-	}
+  	char* dir_name = strdup(path);
+  	if (!dir_name) 
+  	  	return NULL;
+	
+  	char* last = strrchr(dir_name, '/');
+  	if (last) {
+  	    *(last+1) = '\0';
+  	    return dir_name;
+  	}
 
-	int last_i = -1;
-	size_t len = strlen(path);
-
-	for (size_t i = 0; i < len; i++) {
-		if (path[i] == '/') {
-			last_i = i;
-		}
-	}
-
-	if (last_i == -1) {
-		return strdup("");
-	}
-
-	char *dir = (char *)malloc(last_i + 2);
-	if (!dir) {
-		return NULL;
-	}
-
-	strncpy(dir, path, last_i + 1);
-	dir[last_i + 1] = '\0';
-
-	return dir;
+  	free(dir_name);
+  	return strdup("");
 }
 
 int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
@@ -820,9 +806,14 @@ fail:
 			slurm_info("pyxis: could not remove squashfs %s: %s", context.container.squashfs_path, strerror(errno));
 	}
 	if (context.args->image_shared == 1 && file_exists(context.container.lock_file)) {
+		ret = close(fd);
+		if (ret < 0) {
+			slurm_info("pyxis: unable to close lock file %s: %s", context.container.lock_file, strerror(errno));
+		}
+
 		ret = unlink(context.container.lock_file);
 		if (ret < 0 && errno != ENOENT) {
-			slurm_spank_log("pyxis: unable to delete lock file %s: %s", context.container.lock_file, strerror(errno));
+			slurm_info("pyxis: unable to delete lock file %s: %s", context.container.lock_file, strerror(errno));
 		}
 	}
 
@@ -1557,7 +1548,7 @@ int create_enroot_lock_file(void)
 	char* dir = path_dir(context.args->image_save);
 	char lock_file[PATH_MAX];
 	ret = snprintf(lock_file, sizeof(lock_file),
-		"%s%d/%s.lock", context.args->image_save, context.job.uid, context.args->image);
+		"%s%d/%s.lock", dir, context.job.uid, context.args->image);
 	if (ret < 0 || ret >= sizeof(lock_file))
 		return (-1);
 

@@ -591,6 +591,29 @@ bool pyxis_args_enabled(void)
 	return (true);
 }
 
+int path_valid(const char *path) {
+    if (path == NULL || strlen(path) == 0) {
+        return true;
+    }
+
+    int i = 0;
+    int in_segment = 0;
+
+    for (i = 0; i < strlen(path); i++) {
+        if (path[i] == ' ') {
+            if (!in_segment) {
+                return false;
+            }
+        } else if (path[i] == '/') {
+            in_segment = 0;
+        } else {
+            in_segment = 1;
+        }
+    }
+
+    return true;
+}
+
 bool pyxis_args_valid(struct plugin_config config)
 {
 	char* image_save = pyxis_args.image_save;
@@ -598,12 +621,17 @@ bool pyxis_args_valid(struct plugin_config config)
 		image_save = config.container_image_save;
 	}
 
+	if (!path_valid(image_save)) {
+		slurm_error("pyxis: --container-image-save contains extra spaces");
+		return (false);
+	}
+
 	int image_shared = pyxis_args.image_shared;
 	if (image_shared == -1 && config.container_image_shared != -1) {
 		image_shared = config.container_image_shared;
 	}
 
-	if (image_shared && image_save == NULL) {
+	if (image_shared == 1 && image_save == NULL) {
 		slurm_error("pyxis: --container-image-shared is set without --container-image-save");
 		return (false);
 	}
