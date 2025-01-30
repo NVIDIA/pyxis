@@ -56,26 +56,26 @@ struct spank_option spank_opts[] =
 	{
 		"container-image-save",
 		"PATH",
-		"[pyxis] absolute path to the file or directory where squashfs files will be stored. "
-		"If the file or directory already exists, then it'll be reused. "
-		"If the path to the file or directory does not exist, then it'll be created. "
-		"Path to directory ends with / (/path/to/directory/ and /path/to/file). "
-		"If this option is fullfilled, squashfs files will not be removed and will be reused in the next runs.",
+		"[pyxis] Absolute path to the file or directory where SquashFS files will be stored. "
+		"If the specified file or directory already exists, it will be reused. "
+		"If the path does not exist, it will be created. "
+		"A directory path must end with '/' (e.g., /path/to/directory/ vs. /path/to/file). "
+		"If the image name itself contains '/', a nested directory will be created under the specified path (if it is a directory).",
 		1, 0, spank_option_image_save
 	},
 	{
 		"container-image-shared",
 		NULL,
-		"[pyxis] pull images only from one of the workers. "
-		"Only available when --container-image-save is specified either in pyxis config or in the args "
-		"Should be used if shared filesystem for workers is used and there's no need to have concurrent pulling "
-		"of the same image. Helpful to avoid throttling in registries. ",
+		"[pyxis] Pull images from only one of the nodes. "
+		"This option is available only when --container-image-save is specified. "
+		"It should be used when a shared filesystem is available for workers, eliminating the need for concurrent image pulling. "
+		"This helps prevent registry throttling.",
 		0, 1, spank_option_image_shared,
 	},
 	{
 		"no-container-image-shared",
 		NULL,
-		"[pyxis] pull images only from all of the workers.",
+		"[pyxis] Pull images independently on all nodes.",
 		0, 0, spank_option_image_shared,
 	},
 	{
@@ -591,39 +591,11 @@ bool pyxis_args_enabled(void)
 	return (true);
 }
 
-int path_valid(const char *path) {
-    if (path == NULL || strlen(path) == 0) {
-        return true;
-    }
-
-    int i = 0;
-    int in_segment = 0;
-
-    for (i = 0; i < strlen(path); i++) {
-        if (path[i] == ' ') {
-            if (!in_segment) {
-                return false;
-            }
-        } else if (path[i] == '/') {
-            in_segment = 0;
-        } else {
-            in_segment = 1;
-        }
-    }
-
-    return true;
-}
-
 bool pyxis_args_valid(struct plugin_config config)
 {
 	char* image_save = pyxis_args.image_save;
 	if (image_save == NULL && strlen(config.container_image_save) != 0) {
 		image_save = config.container_image_save;
-	}
-
-	if (!path_valid(image_save)) {
-		slurm_error("pyxis: --container-image-save contains extra spaces");
-		return (false);
 	}
 
 	int image_shared = pyxis_args.image_shared;

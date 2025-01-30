@@ -264,35 +264,33 @@ static int enroot_create_user_runtime_dir(void)
 	return (0);
 }
 
-/* As root, create the per-user directory where squashfs files are stored and later could be reused. */
-static int enroot_create_image_save_dir(char *path) 
+/* 
+ * As root, create the directory (base_path/relative_path) where squashfs files are stored and later could be reused. 
+ * The only path that is created is relative_path.
+ */
+static int enroot_create_image_save_dir(const char *base_path, const char *relative_path)
 {
 	int ret;
-	char uid_dir_path[PATH_MAX];
 
-	if (path == NULL || strlen(path) == 0) {
+	char full_path[PATH_MAX];
+	ret = snprintf(full_path, sizeof(full_path), "%s%s", base_path, relative_path);
+	if (ret < 0 && ret >= sizeof(full_path)) {
+		return (-1);
+	}
+
+	if (strlen(full_path) == 0) {
 		slurm_error("pyxis: path is empty");
 		return (-1);
 	}
 
-	/* In case it's a dir, we create per user folder */
-	if (path[strlen(path) - 1] == '/') {
-		ret = snprintf(uid_dir_path, sizeof(uid_dir_path), "%s%u/", path, context.job.uid);
-		if (ret < 0 || ret >= sizeof(uid_dir_path)) {
-			slurm_error("pyxis: too long path to save image: %s", path);
-			return (-1);
-		}
-		path = uid_dir_path;
-	}
-
-	/* Start from 1 to avoid first / */
-	for (size_t i = 1; i < strlen(path); i++) {
-		if (path[i] != '/') {
+	/* Start from strlen(base_path) so we create only relative path */
+	for (size_t i = strlen(base_path); i < strlen(full_path); i++) {
+		if (full_path[i] != '/') {
 			continue;
 		}
 
 		char temp_path[i + 1];
-		strncpy(temp_path, path, i);
+		strncpy(temp_path, full_path, i);
 		temp_path[i] = '\0';
 
 		ret = mkdir(temp_path, 0700);
@@ -313,22 +311,6 @@ static int enroot_create_image_save_dir(char *path)
 	return (0);
 }
 
-static char* path_dir(const char *path)
-{
-  	char* dir_name = strdup(path);
-  	if (!dir_name) 
-  	  	return NULL;
-	
-  	char* last = strrchr(dir_name, '/');
-  	if (last) {
-  	    *(last+1) = '\0';
-  	    return dir_name;
-  	}
-
-  	free(dir_name);
-  	return strdup("");
-}
-
 int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 {
 	int ret;
@@ -342,25 +324,9 @@ int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 	if (ret < 0)
 		return (-1);
 
-	/* Initialise default values from config if args were not passed */
-	if (context.args->image_shared == -1) {
-		context.args->image_shared = context.config.container_image_shared;
-	}
-	if (strlen(context.config.container_image_save) > 0 && context.args->image_save == NULL) {
-		context.args->image_save = strdup(context.config.container_image_save);
-	}
-
 	ret = enroot_create_user_runtime_dir();
 	if (ret < 0)
 		return (-1);
-
-	if (context.args->image_save != NULL) {
-		ret = enroot_create_image_save_dir(context.args->image_save);
-		if (ret < 0){
-			slurm_error("pyxis: unable to create directory for --container-image-save: %s", strerror(errno));
-			return (-1);
-		}
-	}
 
 	return (0);
 }
@@ -1136,6 +1102,39 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	if (ret < 0)
 		goto fail;
 
+	if (context.args->image_save && !folder_exists(path_dir(context.args->image_save))) {
+		slurm_error("pyxis: image save directory does not exist: %s", context.args->image_save);
+		goto fail;
+	}
+	if (strlen(context.config.container_image_save) > 0 && !folder_exists(path_dir(context.config.container_image_save))) {
+		slurm_error("pyxis: image save directory does not exist: %s", context.config.container_image_save);
+		goto fail;
+	}
+
+	/* Initialise default values from config if args were not passed */
+	if (context.args->image_shared == -1) {
+		context.args->image_shared = context.config.container_image_shared;
+	}
+	if (strlen(context.config.container_image_save) > 0 && context.args->image_save == NULL) {
+		char uid_dir[PATH_MAX];
+		ret = snprintf(uid_dir, sizeof(uid_dir), "%u/", context.job.uid);
+		if (ret < 0) {
+			goto fail;
+		}
+
+		ret = enroot_create_image_save_dir(context.config.container_image_save, uid_dir);
+		if (ret < 0) {
+			slurm_error("pyxis: unable to create image save dir: %s", strerror(errno));
+			goto fail;
+		}
+
+		ret = xasprintf(&context.args->image_save, "%s%s", context.config.container_image_save, uid_dir);
+		if (ret < 0 || ret > PATH_MAX) {
+			slurm_error("pyxis: unable to create shared per user container_image_save dir");
+			goto fail;
+		}
+	}
+
 	if (context.job.stepid == SLURM_BATCH_SCRIPT) {
 		rc = spank_get_item(sp, S_JOB_ARGV, &spank_argc, &spank_argv);
 		if (rc != ESPANK_SUCCESS) {
@@ -1208,31 +1207,31 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	}
 
 	if (!context.container.reuse_rootfs) {
-		if (context.args->image_save) {
-			/* `image_save` is either path to directory or path to file where we save squashfs */
-			size_t str_len = strlen(context.args->image_save);
-			
-			if (str_len > 0 && context.args->image_save[str_len - 1] == '/')
-				ret = xasprintf(&context.container.squashfs_path, "%s%d/%s.squashfs",
-					context.args->image_save, context.job.uid, context.args->image);
-			else 
-				ret = xasprintf(&context.container.squashfs_path, "%s", context.args->image_save);
-			if (ret < 0 || ret >= PATH_MAX)
-				goto fail;
-
-			/* Image itself could contain slashes, so we need to ensure about dirs again */
-			ret = enroot_create_image_save_dir(context.container.squashfs_path);
-			if (ret < 0) {
-				goto fail;
-			}
-
-			context.container.reuse_squashfs = true;
-		} else if (strspn(context.args->image, "./") > 0) {
+		if (strspn(context.args->image, "./") > 0) {
 			/* Assume `image` is a path to a squashfs file. */
 			if (strnlen(context.args->image, PATH_MAX) >= PATH_MAX)
 				goto fail;
 
 			context.container.squashfs_path = strdup(context.args->image);
+		} else if (context.args->image_save) {
+			/* `image_save` is either path to directory or path to file where we save squashfs */
+			size_t str_len = strlen(context.args->image_save);
+			
+			if (str_len > 0 && context.args->image_save[str_len - 1] == '/') {
+				/* Image itself could contain slashes, so we need to ensure about dirs again */
+				ret = enroot_create_image_save_dir(context.args->image_save, context.args->image);
+				if (ret < 0) {
+					goto fail;
+				}
+
+				ret = xasprintf(&context.container.squashfs_path, "%s%s.squashfs",
+					context.args->image_save, context.args->image);
+			} else 
+				ret = xasprintf(&context.container.squashfs_path, "%s", context.args->image_save);
+			if (ret < 0 || ret >= PATH_MAX)
+				goto fail;
+
+			context.container.reuse_squashfs = true;
 		} else {
 			ret = xasprintf(&context.container.squashfs_path, "%s/%u/%u.%u.squashfs",
 					context.config.runtime_path, context.job.uid, context.job.jobid, context.job.stepid);
@@ -1548,7 +1547,7 @@ int create_enroot_lock_file(void)
 	char* dir = path_dir(context.args->image_save);
 	char lock_file[PATH_MAX];
 	ret = snprintf(lock_file, sizeof(lock_file),
-		"%s%d/%s.lock", dir, context.job.uid, context.args->image);
+		"%s%s.lock", dir, context.args->image);
 	if (ret < 0 || ret >= sizeof(lock_file))
 		return (-1);
 

@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "common.h"
 
@@ -127,4 +129,25 @@ void array_free(char ***array, size_t *len)
 
 	*array = NULL;
 	*len = 0;
+}
+
+int folder_exists(const char *path) {
+    struct stat st;
+    return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+}
+
+char* path_dir(const char *path)
+{
+	char* dir_name = strdup(path);
+	if (!dir_name)
+		return NULL;
+
+	char* last = strrchr(dir_name, '/');
+	if (last) {
+		*(last+1) = '\0';
+		return dir_name;
+	}
+
+	free(dir_name);
+	return strdup("");
 }

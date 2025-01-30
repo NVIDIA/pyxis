@@ -74,4 +74,8 @@ int array_add_unique(char ***array, size_t *len, const char *entry);
 
 void array_free(char ***array, size_t *len);
 
+int folder_exists(const char *path);
+
+char* path_dir(const char *path);
+
 #endif /* COMMON_H_ */

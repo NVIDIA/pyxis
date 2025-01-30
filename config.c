@@ -6,6 +6,7 @@
 
 #include <slurm/spank.h>
 
+#include "common.h"
 #include "config.h"
 
 static int parse_bool(const char *s)
