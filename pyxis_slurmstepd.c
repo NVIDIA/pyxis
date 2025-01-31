@@ -55,7 +55,6 @@ struct job_info {
 	bool privileged;
 	uint32_t jobid;
 	uint32_t stepid;
-	uint32_t nodeid;
 	uint32_t local_task_count;
 	uint32_t total_task_count;
 	char **environ;
@@ -90,7 +89,7 @@ static struct plugin_context context = {
 	.job = {
 		.uid = -1, .gid = -1, .privileged = false,
 		.jobid = 0, .stepid = 0,
-		.local_task_count = 0, .total_task_count = 0, .nodeid = 0,
+		.local_task_count = 0, .total_task_count = 0,
 		.environ = NULL, .cwd = { 0 }
 	},
 	.container = {
@@ -167,12 +166,6 @@ static int job_get_info(spank_t sp, struct job_info *job)
 	rc = spank_get_item(sp, S_JOB_TOTAL_TASK_COUNT, &job->total_task_count);
 	if (rc != ESPANK_SUCCESS) {
 		slurm_error("pyxis: couldn't get job total task count: %s", spank_strerror(rc));
-		goto fail;
-	}
-
-	rc = spank_get_item(sp, S_JOB_NODEID, &job->nodeid);
-	if (rc != ESPANK_SUCCESS) {
-		slurm_error("pyxis: couldn't get job node id: %s", spank_strerror(rc));
 		goto fail;
 	}
 
@@ -692,6 +685,7 @@ static int enroot_container_create(void)
 	char *enroot_uri = NULL;
 	int rv = -1;
 	int fd = -1;
+	int image_save = context.args->image_save && strlen(context.args->image_save) > 0;
 
 	if (context.container.temporary_squashfs || 
 		(context.container.reuse_squashfs && !file_exists(context.container.squashfs_path))) {
@@ -716,7 +710,7 @@ static int enroot_container_create(void)
 			slurm_spank_log("pyxis: importing docker image: %s", context.args->image);
 		}
 
-		if (context.args->image_shared == 1) {
+		if (image_save) {
 			fd = create_enroot_lock_file();
 			if (fd < 0) {
 				slurm_error("pyxis: unable to create lock file: %s", strerror(errno));
@@ -731,10 +725,6 @@ static int enroot_container_create(void)
 		}
 
 		if (!file_exists(context.container.squashfs_path)) {
-			if (context.args->image_shared == 1) {
-				slurm_spank_log("pyxis: image shared, pulling image only from one worker, job node id %d", context.job.nodeid);
-			}
-
 			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", context.container.squashfs_path, enroot_uri, NULL });
 			if (ret < 0) {
 				slurm_error("pyxis: failed to import docker image");
@@ -744,7 +734,7 @@ static int enroot_container_create(void)
 			slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
 		}
 
-		if (context.args->image_shared == 1 && file_exists(context.container.lock_file)) {
+		if (image_save && file_exists(context.container.lock_file)) {
 			ret = flock(fd, LOCK_UN);
 			if (ret < 0) {
 				slurm_spank_log("pyxis: unable to unlock lock file %s: %s", context.container.lock_file, strerror(errno));
@@ -771,7 +761,7 @@ fail:
 		if (ret < 0)
 			slurm_info("pyxis: could not remove squashfs %s: %s", context.container.squashfs_path, strerror(errno));
 	}
-	if (context.args->image_shared == 1 && file_exists(context.container.lock_file)) {
+	if (image_save && file_exists(context.container.lock_file)) {
 		ret = close(fd);
 		if (ret < 0) {
 			slurm_info("pyxis: unable to close lock file %s: %s", context.container.lock_file, strerror(errno));
@@ -1112,9 +1102,6 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	}
 
 	/* Initialise default values from config if args were not passed */
-	if (context.args->image_shared == -1) {
-		context.args->image_shared = context.config.container_image_shared;
-	}
 	if (strlen(context.config.container_image_save) > 0 && context.args->image_save == NULL) {
 		char uid_dir[PATH_MAX];
 		ret = snprintf(uid_dir, sizeof(uid_dir), "%u/", context.job.uid);
@@ -1130,7 +1117,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 
 		ret = xasprintf(&context.args->image_save, "%s%s", context.config.container_image_save, uid_dir);
 		if (ret < 0 || ret > PATH_MAX) {
-			slurm_error("pyxis: unable to create shared per user container_image_save dir");
+			slurm_error("pyxis: unable to create per user container_image_save dir");
 			goto fail;
 		}
 	}

@@ -15,7 +15,6 @@
 struct plugin_args {
 	char *image;
 	char *image_save;
-	int image_shared;
 	char **mounts;
 	size_t mounts_len;
 	char *workdir;
@@ -34,7 +33,6 @@ struct plugin_args {
 struct plugin_args *pyxis_args_register(spank_t sp);
 
 bool pyxis_args_enabled(void);
-bool pyxis_args_valid(struct plugin_config config);
 
 int add_mount(const char *source, const char *target, const char *flags);
 

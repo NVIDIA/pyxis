@@ -14,7 +14,6 @@
 static struct plugin_args pyxis_args = {
 	.image = NULL,
 	.image_save = NULL,
-	.image_shared = -1,
 	.mounts = NULL,
 	.mounts_len = 0,
 	.workdir = NULL,
@@ -32,7 +31,6 @@ static struct plugin_args pyxis_args = {
 
 static int spank_option_image(int val, const char *optarg, int remote);
 static int spank_option_image_save(int val, const char *optarg, int remote);
-static int spank_option_image_shared(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
 static int spank_option_container_name(int val, const char *optarg, int remote);
@@ -62,21 +60,6 @@ struct spank_option spank_opts[] =
 		"A directory path must end with '/' (e.g., /path/to/directory/ vs. /path/to/file). "
 		"If the image name itself contains '/', a nested directory will be created under the specified path (if it is a directory).",
 		1, 0, spank_option_image_save
-	},
-	{
-		"container-image-shared",
-		NULL,
-		"[pyxis] Pull images from only one of the nodes. "
-		"This option is available only when --container-image-save is specified. "
-		"It should be used when a shared filesystem is available for workers, eliminating the need for concurrent image pulling. "
-		"This helps prevent registry throttling.",
-		0, 1, spank_option_image_shared,
-	},
-	{
-		"no-container-image-shared",
-		NULL,
-		"[pyxis] Pull images independently on all nodes.",
-		0, 0, spank_option_image_shared,
 	},
 	{
 		"container-mounts",
@@ -543,20 +526,6 @@ static int spank_option_image_save(int val, const char *optarg, int remote)
 	return (0);
 }
 
-
-
-static int spank_option_image_shared(int val, const char *optarg, int remote)
-{
-	if (pyxis_args.image_shared != -1 && pyxis_args.image_shared != val) {
-		slurm_error("pyxis: both --container-image-shared and --no-container-image-shared were specified");
-		return (-1);
-	}
-
-	pyxis_args.image_shared = val;
-
-	return (0);
-}
-
 struct plugin_args *pyxis_args_register(spank_t sp)
 {
 	spank_err_t rc;
@@ -585,26 +554,6 @@ bool pyxis_args_enabled(void)
 			slurm_error("pyxis: ignoring --[no-]container-remap-root because neither --container-image nor --container-name is set");
 		if (pyxis_args.entrypoint != -1)
 			slurm_error("pyxis: ignoring --[no-]container-entrypoint because neither --container-image nor --container-name is set");
-		return (false);
-	}
-
-	return (true);
-}
-
-bool pyxis_args_valid(struct plugin_config config)
-{
-	char* image_save = pyxis_args.image_save;
-	if (image_save == NULL && strlen(config.container_image_save) != 0) {
-		image_save = config.container_image_save;
-	}
-
-	int image_shared = pyxis_args.image_shared;
-	if (image_shared == -1 && config.container_image_shared != -1) {
-		image_shared = config.container_image_shared;
-	}
-
-	if (image_shared == 1 && image_save == NULL) {
-		slurm_error("pyxis: --container-image-shared is set without --container-image-save");
 		return (false);
 	}
 

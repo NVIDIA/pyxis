@@ -6,11 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <slurm/spank.h>
-
 #include "pyxis_srun.h"
 #include "args.h"
-#include "config.h"
 
 struct plugin_context {
 	struct plugin_args *args;
@@ -36,17 +33,6 @@ int pyxis_srun_post_opt(spank_t sp, int ac, char **av)
 {
 	/* Calling pyxis_args_enabled() for arguments validation */
 	pyxis_args_enabled();
-
-	int ret;
-	ret = pyxis_config_parse(&context.config, ac, av);
-	if (ret < 0) {
-		slurm_error("pyxis: failed to parse configuration");
-		return (-1);
-	}
-
-	if (!pyxis_args_valid(context.config)) {
-		return (-1);
-	}
 
 	return (0);
 }

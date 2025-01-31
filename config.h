@@ -19,7 +19,6 @@ struct plugin_config {
 	enum container_scope container_scope;
 	bool sbatch_support;
 	bool expose_enroot_logs;
-	int container_image_shared;
 	char container_image_save[PATH_MAX];
 };
 
