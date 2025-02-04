@@ -7,14 +7,14 @@ PLUGINDIR := $(abspath $(DESTDIR)/$(libdir)/slurm)
 CONFDIR   := $(abspath $(DESTDIR)/$(datadir)/pyxis)
 
 ARCH      ?= $(shell uname -m)
-VERSION   ?= 0.20.0
+PYXIS_VER ?= 0.20.0
 
 PLUGIN := spank_pyxis.so
 CONF   := pyxis.conf
 
 .PHONY: all install uninstall clean deb rpm
 
-CPPFLAGS := -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -DPYXIS_VERSION=\"$(VERSION)\" $(CPPFLAGS)
+CPPFLAGS := -D_GNU_SOURCE -D_FORTIFY_SOURCE=2 -DPYXIS_VERSION=\"$(PYXIS_VER)\" $(CPPFLAGS)
 CFLAGS := -std=gnu11 -O2 -g -Wall -Wunused-variable -fstack-protector-strong -fpic $(CFLAGS)
 LDFLAGS := -Wl,-znoexecstack -Wl,-zrelro -Wl,-znow $(LDFLAGS)
 
@@ -46,14 +46,14 @@ clean:
 	rm -rf $(C_OBJS) $(DEPS) $(PLUGIN)
 
 orig: clean
-	tar -caf ../nvslurm-plugin-pyxis_$(VERSION).orig.tar.xz --owner=root --group=root --exclude=.git .
+	tar -caf ../nvslurm-plugin-pyxis_$(PYXIS_VER).orig.tar.xz --owner=root --group=root --exclude=.git .
 
 deb: clean
 	debuild -us -uc -G -i -tc
 
 rpm: clean
 	test -e $(ARCH) || ln -s . $(ARCH)
-	rpmbuild --target=$(ARCH) --clean -ba -D"_topdir $(CURDIR)/rpm" -D"VERSION $(VERSION)" pyxis.spec
+	rpmbuild --target=$(ARCH) --clean -ba -D"_topdir $(CURDIR)/rpm" -D"PYXIS_VER $(PYXIS_VER)" pyxis.spec
 	$(RM) -r $(ARCH) $(addprefix rpm/, BUILDROOT SOURCES)
 
 -include $(DEPS)
