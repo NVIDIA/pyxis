@@ -1,10 +1,10 @@
-%global slurm_version  %(rpm -q slurm-devel --qf "%{VERSION}" | awk -F. '{print "sl"$1$2"."}' 2>/dev/null)
+%global slurm_version  %(rpm -q slurm-devel --qf "%{VERSION}" | awk -F. '{print "sl"$1$2}' 2>/dev/null)
 %define _use_internal_dependency_generator 0
 %define __find_requires %{_builddir}/find-requires
 
 Name:           nvslurm-plugin-pyxis
 Version:        %{PYXIS_VER}
-Release:        %{slurm_version}1%{?dist}
+Release:        1.%{slurm_version}%{?dist}
 License:        ASL 2.0
 Vendor: NVIDIA CORPORATION
 Packager: NVIDIA CORPORATION <cudatools@nvidia.com>
