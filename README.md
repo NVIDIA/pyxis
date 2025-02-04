@@ -57,15 +57,16 @@ $ srun --help
                               remote host filesystem.
 
       --container-image-save=PATH
-                              [pyxis] absolute path to the file or directory
-                              where squashfs files will be stored. If the file
-                              or directory already exists, then it'll be reused.
-                              If the path to the file or directory does not
-                              exist, then it'll be created. Path to directory
-                              ends with / (/path/to/directory/ and
-                              /path/to/file). If this option is fullfilled,
-                              squashfs files will not be removed and will be
-                              reused in the next runs.
+                              [pyxis] Absolute path to the file or directory
+                              where SquashFS files will be stored. If the
+                              specified file or directory already exists, it
+                              will be reused. If the path does not exist, it
+                              will be created. A directory path must end with
+                              '/' (e.g., /path/to/directory/ vs. /path/to/file).
+                              If the image name contains '/', a nested directory
+                              will be created under the specified path (if it is
+                              a directory).If the option argument is empty (""),
+                              SquashFS files will not be stored.
 
       --container-mounts=SRC:DST[:FLAGS][,SRC:DST...]
                               [pyxis] bind mount[s] inside the container. Mount

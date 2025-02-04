@@ -1092,7 +1092,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	if (ret < 0)
 		goto fail;
 
-	if (context.args->image_save && !folder_exists(path_dir(context.args->image_save))) {
+	if (context.args->image_save && strlen(context.args->image_save) > 0 && !folder_exists(path_dir(context.args->image_save))) {
 		slurm_error("pyxis: image save directory does not exist: %s", context.args->image_save);
 		goto fail;
 	}
@@ -1200,7 +1200,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 				goto fail;
 
 			context.container.squashfs_path = strdup(context.args->image);
-		} else if (context.args->image_save) {
+		} else if (context.args->image_save && strlen(context.args->image_save) != 0) {
 			/* `image_save` is either path to directory or path to file where we save squashfs */
 			size_t str_len = strlen(context.args->image_save);
 			
