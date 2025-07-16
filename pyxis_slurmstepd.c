@@ -469,6 +469,8 @@ static int enroot_container_get(const char *name, pid_t *pid)
 		slurm_error("pyxis: \"enroot list -f\" did not produce any usable output");
 		goto fail;
 	}
+	free(line);
+	line = NULL;
 
 	while ((line = get_line_from_file(fp)) != NULL) {
 		ctr_name = strtok_r(line, " ", &saveptr);
