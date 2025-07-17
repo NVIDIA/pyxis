@@ -9,11 +9,10 @@ permissions:
 
 jobs:
   build:
-
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Dependencies
       run: |
@@ -22,7 +21,7 @@ jobs:
 
     - name: Coverity download
       env:
-          COVERITY_TOKEN: ${{ secrets.COVERITY_TOKEN }}
+        COVERITY_TOKEN: ${{ secrets.COVERITY_TOKEN }}
       run: |
         mkdir -p cov-analysis-linux64
         curl --proto '=https' -fSsL https://scan.coverity.com/download/linux64 --data "token=${COVERITY_TOKEN}&project=NVIDIA%2Fpyxis" | tar xz --strip 1 -C cov-analysis-linux64
@@ -35,7 +34,7 @@ jobs:
 
     - name: Coverity upload
       env:
-          COVERITY_TOKEN: ${{ secrets.COVERITY_TOKEN }}
+        COVERITY_TOKEN: ${{ secrets.COVERITY_TOKEN }}
       run: |
         curl --form "token=${COVERITY_TOKEN}" \
              --form email=fabecassis@nvidia.com \
