@@ -2,7 +2,10 @@ name: Coverity Scan
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
+
+permissions:
+  contents: read
 
 jobs:
   build:
