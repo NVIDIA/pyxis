@@ -18,6 +18,8 @@ struct plugin_config {
 	bool execute_entrypoint;
 	enum container_scope container_scope;
 	bool sbatch_support;
+	bool expose_enroot_logs;
+	char container_image_save[PATH_MAX];
 };
 
 int pyxis_config_parse(struct plugin_config *config, int ac, char **av);

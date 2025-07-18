@@ -5,12 +5,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wordexp.h>
 
 #include "args.h"
 #include "common.h"
+#include "config.h"
 
 static struct plugin_args pyxis_args = {
 	.image = NULL,
+	.image_save = NULL,
 	.mounts = NULL,
 	.mounts_len = 0,
 	.workdir = NULL,
@@ -27,6 +30,7 @@ static struct plugin_args pyxis_args = {
 };
 
 static int spank_option_image(int val, const char *optarg, int remote);
+static int spank_option_image_save(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
 static int spank_option_container_name(int val, const char *optarg, int remote);
@@ -46,6 +50,17 @@ struct spank_option spank_opts[] =
 		"[pyxis] the image to use for the container filesystem. Can be either a docker image given as an enroot URI, "
 			"or a path to a squashfs file on the remote host filesystem.",
 		1, 0, spank_option_image
+	},
+	{
+		"container-image-save",
+		"PATH",
+		"[pyxis] Absolute path to the file or directory where SquashFS files will be stored. "
+		"If the specified file or directory already exists, it will be reused. "
+		"If the path does not exist, it will be created. "
+		"A directory path must end with '/' (e.g., /path/to/directory/ vs. /path/to/file). "
+		"If the image name contains '/', a nested directory will be created under the specified path (if it is a directory)."
+		"If the option argument is empty (\"\"), SquashFS files will not be stored.",
+		1, 0, spank_option_image_save
 	},
 	{
 		"container-mounts",
@@ -494,6 +509,24 @@ fail:
 	return (rv);
 }
 
+static int spank_option_image_save(int val, const char *optarg, int remote)
+{
+	if (optarg == NULL) {
+		slurm_error("pyxis: --container-image-save: argument required");
+		return (-1);
+	}
+
+	/* Slurm can call us twice with the same value, check if it's a different value than before. */
+	if (pyxis_args.image_save != NULL && strcmp(pyxis_args.image_save, optarg) != 0) {
+		slurm_error("pyxis: --container-image-save specified multiple times");
+		return (-1);
+	}
+
+	pyxis_args.image_save = strdup(optarg);
+
+	return (0);
+}
+
 struct plugin_args *pyxis_args_register(spank_t sp)
 {
 	spank_err_t rc;
@@ -531,6 +564,7 @@ bool pyxis_args_enabled(void)
 void pyxis_args_free(void)
 {
 	free(pyxis_args.image);
+	free(pyxis_args.image_save);
 	remove_all_mounts();
 	free(pyxis_args.workdir);
 	free(pyxis_args.container_name);

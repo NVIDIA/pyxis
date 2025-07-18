@@ -11,6 +11,7 @@
 
 struct plugin_context {
 	struct plugin_args *args;
+	struct plugin_config config;
 };
 
 static struct plugin_context context = {

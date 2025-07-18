@@ -5,6 +5,8 @@
 #ifndef ARGS_H_
 #define ARGS_H_
 
+#include "config.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -12,6 +14,7 @@
 
 struct plugin_args {
 	char *image;
+	char *image_save;
 	char **mounts;
 	size_t mounts_len;
 	char *workdir;
