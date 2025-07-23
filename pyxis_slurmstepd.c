@@ -1075,6 +1075,8 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 				goto fail;
 
 			context.container.squashfs_path = strdup(context.args->image);
+			if (context.container.squashfs_path == NULL)
+				goto fail;
 		} else {
 			ret = xasprintf(&context.container.squashfs_path, "%s/%u/%u.%u.squashfs",
 					context.config.runtime_path, context.job.uid, context.job.jobid, context.job.stepid);
@@ -1089,8 +1091,11 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		remove_all_mounts();
 	}
 
-	if (context.args->container_save != NULL)
+	if (context.args->container_save != NULL) {
 		context.container.save_path = strdup(context.args->container_save);
+		if (context.container.save_path == NULL)
+			goto fail;
+	}
 
 	rv = 0;
 

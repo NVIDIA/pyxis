@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <stdio.h>
@@ -166,6 +166,10 @@ static int spank_option_image(int val, const char *optarg, int remote)
 	}
 
 	pyxis_args.image = strdup(optarg);
+	if (pyxis_args.image == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		return (-1);
+	}
 	return (0);
 }
 
@@ -230,6 +234,10 @@ static int parse_mount_option(const char *option)
 	if (option == NULL)
 		return (-1);
 	option_dup = strdup(option);
+	if (option_dup == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		return (-1);
+	}
 	remainder = option_dup;
 
 	src = strsep(&remainder, ":");
@@ -323,6 +331,10 @@ static int spank_option_workdir(int val, const char *optarg, int remote)
 	}
 
 	pyxis_args.workdir = strdup(optarg);
+	if (pyxis_args.workdir == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		return (-1);
+	}
 	return (0);
 }
 
@@ -347,6 +359,10 @@ static int spank_option_container_name(int val, const char *optarg, int remote)
 	}
 
 	optarg_dup = strdup(optarg);
+	if (optarg_dup == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		return (-1);
+	}
 
 	flags = optarg_dup;
 	name = strsep(&flags, ":");
@@ -366,7 +382,18 @@ static int spank_option_container_name(int val, const char *optarg, int remote)
 	}
 
 	pyxis_args.container_name = strdup(name);
+	if (pyxis_args.container_name == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		goto fail;
+	}
+
 	pyxis_args.container_name_flags = strdup(flags);
+	if (pyxis_args.container_name_flags == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		free(pyxis_args.container_name);
+		pyxis_args.container_name = NULL;
+		goto fail;
+	}
 
 	rv = 0;
 
@@ -398,6 +425,10 @@ static int spank_option_container_save(int val, const char *optarg, int remote)
 	}
 
 	pyxis_args.container_save = strdup(optarg);
+	if (pyxis_args.container_save == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		return (-1);
+	}
 	return (0);
 }
 
