@@ -39,7 +39,7 @@ $ sudo systemctl restart slurmd
 #### With a rpm package
 ```console
 $ make rpm
-$ sudo rpm -i x86_64/nvslurm-plugin-pyxis-*-1.el7.x86_64.rpm
+$ sudo rpm -i rpm/RPMS/x86_64/nvslurm-plugin-pyxis-*.x86_64.rpm
 $ sudo ln -s /usr/share/pyxis/pyxis.conf /etc/slurm/plugstack.conf.d/pyxis.conf
 $ sudo systemctl restart slurmd
 ```

@@ -9,6 +9,7 @@ License:        ASL 2.0
 Vendor: NVIDIA CORPORATION
 Packager: NVIDIA CORPORATION <cudatools@nvidia.com>
 URL:            https://github.com/NVIDIA/pyxis/
+Source:         %{name}-%{version}.tar.xz
 
 BuildRequires:  make gcc slurm-devel
 
@@ -19,6 +20,8 @@ Requires:       (enroot >= 3.1.0 or enroot-hardened >= 3.1.0)
 %else
 Requires:       enroot >= 3.1.0
 %endif
+
+%global debug_package %{nil}
 
 %description
 Pyxis is a SPANK plugin for the SLURM Workload Manager. It allows unprivileged
@@ -31,6 +34,7 @@ cluster users to run containerized tasks through the srun command.
 %{_datadir}/pyxis/pyxis.conf
 
 %prep
+%setup -q
 # Dummy file used to get a RPM dependency on libslurm.so
 echo 'int main(){}' > %{_builddir}/libslurm_dummy.c
 cat <<EOF > %{_builddir}/find-requires

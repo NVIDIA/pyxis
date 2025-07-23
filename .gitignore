@@ -4,5 +4,4 @@
 *.so.*
 *.d
 *.patch
-
-cli
+rpm/

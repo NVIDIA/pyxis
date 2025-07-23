@@ -6,7 +6,6 @@ datadir     ?= $(datarootdir)
 PLUGINDIR := $(abspath $(DESTDIR)/$(libdir)/slurm)
 CONFDIR   := $(abspath $(DESTDIR)/$(datadir)/pyxis)
 
-ARCH      ?= $(shell uname -m)
 PYXIS_VER ?= 0.20.0
 
 PLUGIN := spank_pyxis.so
@@ -52,8 +51,9 @@ deb: clean
 	debuild -us -uc -G -i -tc
 
 rpm: clean
-	test -e $(ARCH) || ln -s . $(ARCH)
-	rpmbuild --target=$(ARCH) --clean -ba -D"_topdir $(CURDIR)/rpm" -D"PYXIS_VER $(PYXIS_VER)" pyxis.spec
-	$(RM) -r $(ARCH) $(addprefix rpm/, BUILDROOT SOURCES)
+	mkdir -p rpm/SOURCES
+	tar -caf rpm/SOURCES/nvslurm-plugin-pyxis-$(PYXIS_VER).tar.xz --transform='s,^.,nvslurm-plugin-pyxis-$(PYXIS_VER),' --exclude=rpm --exclude=.git .
+	rpmbuild --clean -ba -D"_topdir $(CURDIR)/rpm" -D"PYXIS_VER $(PYXIS_VER)" pyxis.spec
+	$(RM) -r $(addprefix rpm/, BUILDROOT BUILD SOURCES)
 
 -include $(DEPS)
