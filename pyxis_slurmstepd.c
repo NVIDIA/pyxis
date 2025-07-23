@@ -820,7 +820,8 @@ static int enroot_create_start_config(char (*path)[PATH_MAX])
 		}
 	}
 
-	if (memccpy(*path, template, '\0', sizeof(*path)) == NULL)
+	ret = snprintf(*path, sizeof(*path), "%s", template);
+	if (ret < 0 || ret >= sizeof(*path))
 		goto fail;
 
 	rv = 0;
@@ -1346,7 +1347,8 @@ static int enroot_container_export(void)
 	char path[PATH_MAX];
 
 	if (context.container.save_path[0] == '/') {
-		if (memccpy(path, context.container.save_path, '\0', sizeof(path)) == NULL)
+		ret = snprintf(path, sizeof(path), "%s", context.container.save_path);
+		if (ret < 0 || ret >= sizeof(path))
 			return (-1);
 	} else {
 		if (context.job.cwd[0] == '\0') {

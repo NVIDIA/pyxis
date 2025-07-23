@@ -1,7 +1,8 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
  */
 
+#include <stdio.h>
 #include <string.h>
 
 #include <slurm/spank.h>
@@ -39,7 +40,8 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	for (int i = 0; i < ac; ++i) {
 		if (strncmp("runtime_path=", av[i], 13) == 0) {
 			optarg = av[i] + 13;
-			if (memccpy(config->runtime_path, optarg, '\0', sizeof(config->runtime_path)) == NULL) {
+			ret = snprintf(config->runtime_path, sizeof(config->runtime_path), "%s", optarg);
+			if (ret < 0 || ret >= sizeof(config->runtime_path)) {
 				slurm_error("pyxis: runtime_path: path too long: %s", optarg);
 				return (-1);
 			}
