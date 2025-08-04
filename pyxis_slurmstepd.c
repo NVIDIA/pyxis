@@ -255,6 +255,9 @@ int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 {
 	int ret;
 
+	/* Check environment variables for default values after command-line processing */
+	pyxis_args_check_environment_variables(sp);
+
 	if (!pyxis_args_enabled())
 		return (0);
 

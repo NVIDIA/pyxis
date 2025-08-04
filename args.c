@@ -8,6 +8,7 @@
 
 #include "args.h"
 #include "common.h"
+#include "config.h"
 
 static struct plugin_args pyxis_args = {
 	.image = NULL,
@@ -148,6 +149,92 @@ struct spank_option spank_opts[] =
 	},
 	SPANK_OPTIONS_TABLE_END
 };
+
+static const char *get_env_var(spank_t sp, const char *var_name, char *buf, size_t buf_size)
+{
+	spank_context_t ctx = spank_context();
+	spank_err_t rc;
+
+	if (ctx == S_CTX_REMOTE) {
+		rc = spank_getenv(sp, var_name, buf, buf_size);
+		return (rc == ESPANK_SUCCESS) ? buf : NULL;
+	} else {
+		return getenv(var_name);
+	}
+}
+
+void pyxis_args_check_environment_variables(spank_t sp)
+{
+	const char *env_val;
+	char buf[PATH_MAX];
+	int ret;
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_IMAGE", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.image == NULL)
+		spank_option_image(0, env_val, 0);
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_MOUNTS", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.mounts_len == 0)
+		spank_option_mount(0, env_val, 0);
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_WORKDIR", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.workdir == NULL)
+		spank_option_workdir(0, env_val, 0);
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_NAME", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.container_name == NULL)
+		spank_option_container_name(0, env_val, 0);
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_SAVE", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.container_save == NULL)
+		spank_option_container_save(0, env_val, 0);
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_MOUNT_HOME", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.mount_home == -1) {
+		ret = parse_bool(env_val);
+		if (ret >= 0)
+			spank_option_container_mount_home(ret, NULL, 0);
+	}
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_REMAP_ROOT", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.remap_root == -1) {
+		ret = parse_bool(env_val);
+		if (ret >= 0)
+			spank_option_container_remap_root(ret, NULL, 0);
+	}
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_ENTRYPOINT", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.entrypoint == -1) {
+	        ret = parse_bool(env_val);
+		if (ret >= 0)
+			spank_option_container_entrypoint(ret, NULL, 0);
+	}
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_ENTRYPOINT_LOG", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.entrypoint_log == -1) {
+	        ret = parse_bool(env_val);
+		if (ret >= 0)
+			spank_option_container_entrypoint_log(ret, NULL, 0);
+	}
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_WRITABLE", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.writable == -1) {
+		ret = parse_bool(env_val);
+		if (ret >= 0)
+			spank_option_container_writable(ret, NULL, 0);
+	}
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_READONLY", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.writable == -1) {
+		ret = parse_bool(env_val);
+		if (ret >= 0)
+			spank_option_container_writable(!ret, NULL, 0);
+	}
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_ENV", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.env_vars_len == 0)
+		spank_option_container_env(0, env_val, 0);
+}
 
 static int spank_option_image(int val, const char *optarg, int remote)
 {

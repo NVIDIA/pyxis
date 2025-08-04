@@ -37,4 +37,6 @@ void remove_all_mounts(void);
 
 void pyxis_args_free(void);
 
+void pyxis_args_check_environment_variables(spank_t sp);
+
 #endif /* ARGS_H_ */

@@ -22,4 +22,6 @@ struct plugin_config {
 
 int pyxis_config_parse(struct plugin_config *config, int ac, char **av);
 
+int parse_bool(const char *s);
+
 #endif /* CONFIG_H_ */

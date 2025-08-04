@@ -43,6 +43,9 @@ int pyxis_alloc_init(spank_t sp, int ac, char **av)
 
 int pyxis_alloc_post_opt(spank_t sp, int ac, char **av)
 {
+	/* Check environment variables for default values after command-line processing */
+	pyxis_args_check_environment_variables(sp);
+
 	/* Calling pyxis_args_enabled() for arguments validation */
 	pyxis_args_enabled();
 

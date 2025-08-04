@@ -9,12 +9,12 @@
 
 #include "config.h"
 
-static int parse_bool(const char *s)
+int parse_bool(const char *s)
 {
-	if (strcmp(s, "1") == 0 || strcmp(s, "true") == 0)
+	if (strcmp(s, "1") == 0 || strcmp(s, "true") == 0 || strcmp(s, "yes") == 0 || strcmp(s, "y") == 0)
 		return (true);
 
-	if (strcmp(s, "0") == 0 || strcmp(s, "false") == 0)
+	if (strcmp(s, "0") == 0 || strcmp(s, "false") == 0 || strcmp(s, "no") == 0 || strcmp(s, "n") == 0)
 		return (false);
 
 	return (-1);
