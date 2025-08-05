@@ -634,12 +634,20 @@ bool pyxis_args_enabled(void)
 			slurm_error("pyxis: ignoring --container-mounts because neither --container-image nor --container-name is set");
 		if (pyxis_args.workdir != NULL)
 			slurm_error("pyxis: ignoring --container-workdir because neither --container-image nor --container-name is set");
+		if (pyxis_args.container_save != NULL)
+			slurm_error("pyxis: ignoring --container-save because neither --container-image nor --container-name is set");
 		if (pyxis_args.mount_home != -1)
 			slurm_error("pyxis: ignoring --[no-]container-mount-home because neither --container-image nor --container-name is set");
 		if (pyxis_args.remap_root != -1)
 			slurm_error("pyxis: ignoring --[no-]container-remap-root because neither --container-image nor --container-name is set");
 		if (pyxis_args.entrypoint != -1)
 			slurm_error("pyxis: ignoring --[no-]container-entrypoint because neither --container-image nor --container-name is set");
+		if (pyxis_args.entrypoint_log != -1)
+			slurm_error("pyxis: ignoring --container-entrypoint-log because neither --container-image nor --container-name is set");
+		if (pyxis_args.writable == 0)
+			slurm_error("pyxis: ignoring --container-readonly because neither --container-image nor --container-name is set");
+		if (pyxis_args.writable == 1)
+			slurm_error("pyxis: ignoring --container-writable because neither --container-image nor --container-name is set");
 		return (false);
 	}
 
