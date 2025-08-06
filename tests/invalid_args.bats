@@ -38,6 +38,11 @@ load ./common
     [ "${status}" -ne 0 ]
 }
 
+@test "invalid arg: --container-name=<very long name>" {
+    run_srun_unchecked --container-name="$(printf 'a%.0s' {1..300})" --container-image=ubuntu:24.04 true
+    [ "${status}" -ne 0 ]
+}
+
 @test "invalid arg: --container-mounts= (without argument)" {
     run_srun_unchecked --container-mounts=  --container-image=ubuntu:18.04 findmnt /foo
     [ "${status}" -ne 0 ]

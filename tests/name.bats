@@ -17,8 +17,8 @@ function teardown() {
     # Container removal is done async after the job is finished, poll for a while
     i=0
     while [ "$(enroot list | grep -c ${container_name})" -ne 0 ]; do
-	((i++ == 100)) && exit 1
-	sleep 0.1s
+        ((i++ == 100)) && exit 1
+        sleep 0.1s
     done
 }
 
@@ -49,4 +49,21 @@ function teardown() {
 
     run_srun_unchecked --container-name=name-test:create true
     [ "${status}" -ne 0 ]
+}
+
+@test "container cleanup after job cancellation" {
+    run_srun --container-image=ubuntu:24.04 bash -c 'echo ${SLURM_JOB_ID} ; echo ${SLURM_STEP_ID}'
+    job_id="${lines[2]}"
+    step_id="${lines[3]}"
+
+    run_srun --container-image=ubuntu:24.04 sleep 30s &
+    job_pid=$!
+
+    sleep 2s
+    scancel "${job_id}.$((step_id + 1))"
+    wait ${job_pid} || true
+
+    sleep 5s
+    run_enroot list
+    ! grep -q "pyxis_" <<< "${output}"
 }

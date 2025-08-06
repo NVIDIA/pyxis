@@ -3,7 +3,10 @@
 load ./common
 
 @test "--container-remap-root uid map" {
-    run_srun --container-remap-root --container-image=ubuntu:18.04 bash -c 'cat /proc/self/uid_map'
+    run_srun --container-remap-root --container-image=ubuntu:24.04 bash -c 'id -u'
+    [ "${lines[-1]}" -eq 0 ]
+
+    run_srun --container-remap-root --container-image=ubuntu:24.04 bash -c 'cat /proc/self/uid_map'
     uidmap=(${lines[-1]})
     [ "${uidmap[0]}" -eq 0 ]
     [ "${uidmap[1]}" -eq $(id -u) ]
@@ -11,7 +14,10 @@ load ./common
 }
 
 @test "--no-container-remap-root uid map" {
-    run_srun --no-container-remap-root --container-image=ubuntu:18.04 bash -c 'cat /proc/self/uid_map'
+    run_srun --no-container-remap-root --container-image=ubuntu:24.04 bash -c 'id -u'
+    [ "${lines[-1]}" -eq $(id -u) ]
+
+    run_srun --no-container-remap-root --container-image=ubuntu:24.04 bash -c 'cat /proc/self/uid_map'
     uidmap=(${lines[-1]})
     [ "${uidmap[0]}" -eq $(id -u) ]
     [ "${uidmap[1]}" -eq $(id -u) ]
