@@ -36,6 +36,7 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	config->execute_entrypoint = false;
 	config->container_scope = SCOPE_GLOBAL;
 	config->sbatch_support = true;
+	config->use_enroot_load = false;
 
 	for (int i = 0; i < ac; ++i) {
 		if (strncmp("runtime_path=", av[i], 13) == 0) {
@@ -71,6 +72,14 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 				return (-1);
 			}
 			config->sbatch_support = ret;
+		} else if (strncmp("use_enroot_load=", av[i], 16) == 0) {
+			optarg = av[i] + 16;
+			ret = parse_bool(optarg);
+			if (ret < 0) {
+				slurm_error("pyxis: use_enroot_load: invalid value: %s", optarg);
+				return (-1);
+			}
+			config->use_enroot_load = ret;
 		} else {
 			slurm_error("pyxis: unknown configuration option: %s", av[i]);
 			return (-1);
