@@ -31,6 +31,8 @@ function teardown() {
 }
 
 @test "attach to running unnamed container" {
+    run_srun --container-image=ubuntu:22.04 true
+
     run_srun sh -c 'echo $SLURM_JOB_ID'
     job_id="${lines[-1]}"
     run_srun sh -c 'echo $SLURM_STEP_ID'
