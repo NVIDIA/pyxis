@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include <slurm/spank.h>
+#include <slurm/slurm_version.h>
 
 #include "pyxis_slurmstepd.h"
 #include "common.h"
@@ -1458,15 +1459,45 @@ static int enroot_export(void)
 	return (0);
 }
 
+static int enroot_cleanup(void)
+{
+	int ret;
+	int rv = 0;
+
+	/* Need to remove the temporary squashfs if the task was interrupted before cleanup. */
+	if (context.container.use_enroot_import && context.container.squashfs_path != NULL)
+		unlink(context.container.squashfs_path);
+
+	if (context.container.use_importer) {
+		ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
+					    enroot_set_env);
+		if (ret < 0) {
+			slurm_info("pyxis: failed to call importer release");
+			rv = -1;
+		}
+	}
+
+	if (context.container.temporary_rootfs) {
+		slurm_info("pyxis: removing container filesystem: %s", context.container.name);
+
+		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
+		if (ret < 0) {
+			slurm_info("pyxis: failed to remove container filesystem: %s", context.container.name);
+			rv = -1;
+		}
+	}
+
+	return (rv);
+}
+
 int slurm_spank_task_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
-	int rv = -1;
+	int rv = 0;
 
 	if (!context.enabled)
 		return (0);
 
-	rv = 0;
 	/* Last task to exit does the container export and/or container cleanup, if needed. */
 	if (atomic_fetch_add(&context.shm->completed_tasks, 1) == context.job.local_task_count - 1) {
 		ret = enroot_export();
@@ -1475,25 +1506,9 @@ int slurm_spank_task_exit(spank_t sp, int ac, char **av)
 			rv = -1;
 		}
 
-		/* Need to remove the temporary squashfs if the task was interrupted before cleanup. */
-		if (context.container.use_enroot_import && context.container.squashfs_path != NULL)
-			unlink(context.container.squashfs_path);
-
-		if (context.container.use_importer) {
-			ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
-						    enroot_set_env);
-			if (ret < 0)
-				slurm_info("pyxis: failed to call importer release");
-		}
-
-		if (context.container.temporary_rootfs) {
-			slurm_info("pyxis: removing container filesystem: %s", context.container.name);
-
-			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });
-			if (ret < 0)
-				slurm_info("pyxis: failed to remove container filesystem: %s", context.container.name);
-		}
-
+		/* Slurm < 25.05: do cleanup here, before pam_finish: https://support.schedmd.com/show_bug.cgi?id=19362 */
+		if (SLURM_VERSION_NUMBER < SLURM_VERSION_NUM(25, 5, 0))
+			enroot_cleanup();
 	}
 
 	return (rv);
@@ -1503,6 +1518,11 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
 	int rv = 0;
+
+	if (context.enabled) {
+		if (SLURM_VERSION_NUMBER >= SLURM_VERSION_NUM(25, 5, 0))
+			enroot_cleanup();
+	}
 
 	free(context.container.name);
 	free(context.container.squashfs_path);
