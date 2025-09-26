@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <slurm/spank.h>
@@ -78,6 +79,11 @@ struct plugin_context {
 	int user_init_rv;
 	struct shared_memory *shm;
 };
+
+static double timespec_diff_ms(const struct timespec *start, const struct timespec *end)
+{
+	return (end->tv_sec - start->tv_sec) * 1000.0 + (end->tv_nsec - start->tv_nsec) / 1000000.0;
+}
 
 static struct plugin_context context = {
 	.enabled = false,
@@ -633,6 +639,7 @@ static int enroot_container_create(void)
 {
 	int ret;
 	char *enroot_uri = NULL;
+	struct timespec start_time, end_time;
 	int rv = -1;
 
 	if (context.container.use_enroot_import || context.container.use_enroot_load) {
@@ -655,6 +662,8 @@ static int enroot_container_create(void)
 		if (context.job.total_task_count == 0 || context.job.total_task_count == 1)
 			slurm_spank_log("pyxis: importing docker image: %s", context.args->image);
 	}
+
+	clock_gettime(CLOCK_MONOTONIC, &start_time);
 
 	if (context.container.use_enroot_load) {
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "load", "--name", context.container.name, enroot_uri, NULL });
@@ -684,6 +693,9 @@ static int enroot_container_create(void)
 			goto fail;
 		}
 	}
+
+	clock_gettime(CLOCK_MONOTONIC, &end_time);
+	slurm_info("pyxis: completed container setup in %.0f ms", timespec_diff_ms(&start_time, &end_time));
 
 	rv = 0;
 
