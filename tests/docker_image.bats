@@ -90,3 +90,7 @@ load ./common
     fi
     run_srun --container-image dockerd://nvidia/cuda:11.8.0-base-ubuntu22.04 grep 'Ubuntu 22.04' /etc/os-release
 }
+
+@test "Docker Hub rapidsai/devcontainers (zstd layers)" {
+    run_srun --container-image=rapidsai/devcontainers@sha256:24127712aa9025dc0cc4c784a74f7c20633a0751ce49b0122ca8d80210c65345 grep 'Ubuntu 24.04' /etc/os-release
+}
