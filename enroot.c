@@ -97,7 +97,10 @@ static int child_wait(pid_t pid)
 	int status;
 	int ret;
 
-	ret = waitpid(pid, &status, 0);
+	do {
+		ret = waitpid(pid, &status, 0);
+	} while (ret < 0 && errno == EINTR);
+
 	if (ret < 0) {
 		slurm_error("pyxis: could not wait for child %d: %s", pid, strerror(errno));
 		return (-1);
