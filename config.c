@@ -37,6 +37,7 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	config->container_scope = SCOPE_GLOBAL;
 	config->sbatch_support = true;
 	config->use_enroot_load = false;
+	config->importer_path[0] = '\0';
 
 	for (int i = 0; i < ac; ++i) {
 		if (strncmp("runtime_path=", av[i], 13) == 0) {
@@ -80,6 +81,13 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 				return (-1);
 			}
 			config->use_enroot_load = ret;
+		} else if (strncmp("importer=", av[i], 9) == 0) {
+			optarg = av[i] + 9;
+			ret = snprintf(config->importer_path, sizeof(config->importer_path), "%s", optarg);
+			if (ret < 0 || ret >= sizeof(config->importer_path)) {
+				slurm_error("pyxis: importer: path too long: %s", optarg);
+				return (-1);
+			}
 		} else {
 			slurm_error("pyxis: unknown configuration option: %s", av[i]);
 			return (-1);

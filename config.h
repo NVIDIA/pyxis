@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
  */
 
 #ifndef CONFIG_H_
@@ -19,6 +19,7 @@ struct plugin_config {
 	enum container_scope container_scope;
 	bool sbatch_support;
 	bool use_enroot_load;
+	char importer_path[PATH_MAX];
 };
 
 int pyxis_config_parse(struct plugin_config *config, int ac, char **av);

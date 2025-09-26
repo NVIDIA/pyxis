@@ -136,37 +136,6 @@ int enroot_exec_wait(uid_t uid, gid_t gid, int log_fd,
 	return (0);
 }
 
-void enroot_print_log(int log_fd, bool error)
-{
-	int ret;
-	FILE *fp;
-	char *line;
-
-	ret = lseek(log_fd, 0, SEEK_SET);
-	if (ret < 0) {
-		slurm_info("pyxis: couldn't rewind log file: %s", strerror(errno));
-		return;
-	}
-
-	fp = fdopen(log_fd, "r");
-	if (fp == NULL) {
-		slurm_info("pyxis: couldn't open in-memory log for printing: %s", strerror(errno));
-		return;
-	}
-
-	if (error)
-		slurm_error("pyxis: printing enroot log file:");
-	while ((line = get_line_from_file(fp)) != NULL) {
-		if (error)
-			slurm_error("pyxis:     %s", line);
-		else
-			slurm_spank_log("%s", line);
-		free(line);
-	}
-
-	return;
-}
-
 FILE *enroot_exec_output(uid_t uid, gid_t gid,
 			 child_cb callback, char *const argv[])
 {
@@ -183,7 +152,10 @@ FILE *enroot_exec_output(uid_t uid, gid_t gid,
 	ret = enroot_exec_wait(uid, gid, log_fd, callback, argv);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't execute enroot command");
-		enroot_print_log(log_fd, true);
+		memfd_print_log(&log_fd, true, "enroot");
+		if (log_fd >= 0)
+			close(log_fd);
+
 		goto fail;
 	}
 

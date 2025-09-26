@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <linux/limits.h>
@@ -32,6 +32,7 @@
 #include "args.h"
 #include "seccomp_filter.h"
 #include "enroot.h"
+#include "importer.h"
 
 struct container {
 	char *name;
@@ -42,6 +43,7 @@ struct container {
 	bool temporary_rootfs;
 	bool use_enroot_import;
 	bool use_enroot_load;
+	bool use_importer;
 	int userns_fd;
 	int mntns_fd;
 	int cgroupns_fd;
@@ -100,6 +102,7 @@ static struct plugin_context context = {
 		.name = NULL, .squashfs_path = NULL, .save_path = NULL,
 		.reuse_rootfs = false, .reuse_ns = false, .temporary_rootfs = false,
 		.use_enroot_import = false, .use_enroot_load = false,
+		.use_importer = false,
 		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1
 	},
 	.user_init_rv = 0,
@@ -422,6 +425,12 @@ static int enroot_set_env(void)
 		/* If writable/readonly was not set by the user, we rely on the setting specified in the enroot config. */
 	}
 
+	if (setenv("PYXIS_RUNTIME_PATH", context.config.runtime_path, 1) < 0)
+		return (-1);
+
+	if (setenv("PYXIS_VERSION", PYXIS_VERSION, 1) < 0)
+		return (-1);
+
 	return (0);
 }
 
@@ -442,11 +451,8 @@ static FILE *enroot_exec_output_ctx(char *const argv[])
 
 static void enroot_print_log_ctx(bool error)
 {
-	if (context.log_fd >= 0) {
-		enroot_print_log(context.log_fd, error);
-		xclose(context.log_fd);
-		context.log_fd = -1;
-	}
+	if (context.log_fd >= 0)
+		memfd_print_log(&context.log_fd, error, "enroot");
 }
 
 /*
@@ -642,7 +648,7 @@ static int enroot_container_create(void)
 	struct timespec start_time, end_time;
 	int rv = -1;
 
-	if (context.container.use_enroot_import || context.container.use_enroot_load) {
+	if (context.container.use_enroot_import || context.container.use_enroot_load || context.container.use_importer) {
 		if (strncmp("docker://", context.args->image, sizeof("docker://") - 1) == 0 ||
 		    strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) == 0) {
 			enroot_uri = strdup(context.args->image);
@@ -682,15 +688,26 @@ static int enroot_container_create(void)
 				goto fail;
 			}
 			slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
+		} else if (context.container.use_importer) {
+			/* Use external importer to get squashfs file */
+			ret = importer_exec_get(context.config.importer_path, context.job.uid, context.job.gid,
+						enroot_set_env, enroot_uri, &context.container.squashfs_path);
+			if (ret < 0) {
+				slurm_error("pyxis: failed to import docker image with importer: %s", context.config.importer_path);
+				goto fail;
+			}
+			slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
 		}
 
-		slurm_info("pyxis: creating container filesystem: %s", context.container.name);
+		if (context.container.squashfs_path != NULL) {
+			slurm_info("pyxis: creating container filesystem: %s", context.container.name);
 
-		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, context.container.squashfs_path, NULL });
-		if (ret < 0) {
-			slurm_error("pyxis: failed to create container filesystem");
-			enroot_print_log_ctx(true);
-			goto fail;
+			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, context.container.squashfs_path, NULL });
+			if (ret < 0) {
+				slurm_error("pyxis: failed to create container filesystem");
+				enroot_print_log_ctx(true);
+				goto fail;
+			}
 		}
 	}
 
@@ -701,10 +718,21 @@ static int enroot_container_create(void)
 
 fail:
 	free(enroot_uri);
-	if (context.container.use_enroot_import) {
+	if (context.container.use_enroot_import && context.container.squashfs_path != NULL) {
 		ret = unlink(context.container.squashfs_path);
 		if (ret < 0)
 			slurm_info("pyxis: could not remove squashfs %s: %s", context.container.squashfs_path, strerror(errno));
+		free(context.container.squashfs_path);
+		context.container.squashfs_path = NULL;
+	}
+
+	if (context.container.use_importer) {
+		ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
+					    enroot_set_env);
+		if (ret < 0)
+			slurm_info("pyxis: could not call importer release");
+		free(context.container.squashfs_path);
+		context.container.squashfs_path = NULL;
 	}
 
 	return (rv);
@@ -1108,15 +1136,21 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			if (context.container.squashfs_path == NULL)
 				goto fail;
 		} else {
-			context.container.use_enroot_load = context.config.use_enroot_load &&
-				strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) != 0;
-			context.container.use_enroot_import = !context.container.use_enroot_load;
+			/* Determine how the image is going to be loaded */
+			if (context.config.importer_path[0] != '\0') {
+				context.container.use_importer = true;
+			} else {
+				/* No importer configured, use the builtin enroot import/load path */
+				context.container.use_enroot_load = context.config.use_enroot_load &&
+					strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) != 0;
+				context.container.use_enroot_import = !context.container.use_enroot_load;
 
-			if (context.container.use_enroot_import) {
-				ret = xasprintf(&context.container.squashfs_path, "%s/%u/%u.%u.squashfs",
-						context.config.runtime_path, context.job.uid, context.job.jobid, context.job.stepid);
-				if (ret < 0 || ret >= PATH_MAX)
-					goto fail;
+				if (context.container.use_enroot_import) {
+					ret = xasprintf(&context.container.squashfs_path, "%s/%u/%u.%u.squashfs",
+							context.config.runtime_path, context.job.uid, context.job.jobid, context.job.stepid);
+					if (ret < 0 || ret >= PATH_MAX)
+						goto fail;
+				}
 			}
 		}
 	}
@@ -1441,9 +1475,16 @@ int slurm_spank_task_exit(spank_t sp, int ac, char **av)
 			rv = -1;
 		}
 
-		/* Need to cleanup the temporary squashfs if the task running "enroot import" was interrupted. */
+		/* Need to remove the temporary squashfs if the task was interrupted before cleanup. */
 		if (context.container.use_enroot_import && context.container.squashfs_path != NULL)
 			unlink(context.container.squashfs_path);
+
+		if (context.container.use_importer) {
+			ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
+						    enroot_set_env);
+			if (ret < 0)
+				slurm_info("pyxis: failed to call importer release");
+		}
 
 		if (context.container.temporary_rootfs) {
 			slurm_info("pyxis: removing container filesystem: %s", context.container.name);

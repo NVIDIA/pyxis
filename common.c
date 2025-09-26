@@ -6,6 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <unistd.h>
+
+#include <slurm/spank.h>
 
 #include "common.h"
 
@@ -127,4 +131,38 @@ void array_free(char ***array, size_t *len)
 
 	*array = NULL;
 	*len = 0;
+}
+
+void memfd_print_log(int *log_fd, bool error, const char *tag)
+{
+	int ret;
+	FILE *fp;
+	char *line;
+
+	ret = lseek(*log_fd, 0, SEEK_SET);
+	if (ret < 0) {
+		slurm_info("pyxis: couldn't rewind log file: %s", strerror(errno));
+		return;
+	}
+
+	fp = fdopen(*log_fd, "r");
+	if (fp == NULL) {
+		slurm_info("pyxis: couldn't open in-memory log for printing: %s", strerror(errno));
+		return;
+	}
+
+	*log_fd = -1;
+
+	if (error)
+		slurm_error("pyxis: printing %s log file:", tag);
+	while ((line = get_line_from_file(fp)) != NULL) {
+		if (error)
+			slurm_error("pyxis:     %s", line);
+		else
+			slurm_spank_log("%s", line);
+		free(line);
+	}
+
+	fclose(fp);
+	return;
 }
