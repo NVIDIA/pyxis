@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <sys/wait.h>
@@ -153,9 +153,6 @@ FILE *enroot_exec_output(uid_t uid, gid_t gid,
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't execute enroot command");
 		memfd_print_log(&log_fd, true, "enroot");
-		if (log_fd >= 0)
-			close(log_fd);
-
 		goto fail;
 	}
 
