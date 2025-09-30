@@ -25,7 +25,6 @@
 #include <unistd.h>
 
 #include <slurm/spank.h>
-#include <slurm/slurm_version.h>
 
 #include "pyxis_slurmstepd.h"
 #include "common.h"
@@ -1505,9 +1504,7 @@ int slurm_spank_task_exit(spank_t sp, int ac, char **av)
 			rv = -1;
 		}
 
-		/* Slurm < 25.05: do cleanup here, before pam_finish: https://support.schedmd.com/show_bug.cgi?id=19362 */
-		if (SLURM_VERSION_NUMBER < SLURM_VERSION_NUM(25, 5, 0))
-			enroot_cleanup();
+		enroot_cleanup();
 	}
 
 	return (rv);
@@ -1517,11 +1514,6 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 {
 	int ret;
 	int rv = 0;
-
-	if (context.enabled) {
-		if (SLURM_VERSION_NUMBER >= SLURM_VERSION_NUM(25, 5, 0))
-			enroot_cleanup();
-	}
 
 	free(context.container.name);
 	free(context.container.squashfs_path);
