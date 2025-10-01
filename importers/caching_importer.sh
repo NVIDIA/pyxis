@@ -38,7 +38,9 @@ case "${cmd}" in
 	    fi
 
 	    # Save the URI as an extended attribute.
-	    setfattr -n user.image_uri -v "${image_uri}" "${squashfs_temp_path}"
+	    if command -v "setfattr" >/dev/null; then
+		setfattr -n user.image_uri -v "${image_uri}" "${squashfs_temp_path}"
+	    fi
 
 	    mv -n "${squashfs_temp_path}" "${squashfs_path}"
 	fi
