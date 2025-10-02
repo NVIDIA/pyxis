@@ -9,10 +9,10 @@ readonly squashfs_path="${user_dir}/${SLURM_JOB_ID}.${SLURM_STEP_ID}.squashfs"
 
 case "${cmd}" in
     get)
-	if [ $# -ne 2 ]; then
-	    echo "usage: $0 get URI" >&2
-	    exit 1
-	fi
+        if [ $# -ne 2 ]; then
+            echo "usage: $0 get URI" >&2
+            exit 1
+        fi
 
         readonly image_uri="$2"
 
@@ -24,13 +24,13 @@ case "${cmd}" in
         echo "${squashfs_path}"
         ;;
     release)
-	if [ $# -ne 1 ]; then
-	    echo "usage: $0 release" >&2
-	    exit 1
-	fi
+        if [ $# -ne 1 ]; then
+            echo "usage: $0 release" >&2
+            exit 1
+        fi
 
-	# Remove the squashfs file if it exists (idempotent: safe to call multiple times)
-	rm -f "${squashfs_path}"
+        # Remove the squashfs file if it exists (idempotent: safe to call multiple times)
+        rm -f "${squashfs_path}"
         ;;
     *)
         echo "error: unknown command: ${cmd}" >&2
