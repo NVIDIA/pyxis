@@ -6,7 +6,7 @@ datadir     ?= $(datarootdir)
 PLUGINDIR := $(abspath $(DESTDIR)/$(libdir)/slurm)
 CONFDIR   := $(abspath $(DESTDIR)/$(datadir)/pyxis)
 
-PYXIS_VER ?= 0.20.0
+PYXIS_VER ?= 0.21.0
 
 PLUGIN := spank_pyxis.so
 CONF   := pyxis.conf
