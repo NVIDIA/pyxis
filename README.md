@@ -24,6 +24,8 @@ Since [Slurm 21.08](https://github.com/SchedMD/slurm/blob/slurm-21-08-8-2/RELEAS
 ```console
 $ sudo make install
 $ sudo ln -s /usr/local/share/pyxis/pyxis.conf /etc/slurm/plugstack.conf.d/pyxis.conf
+$ sudo echo "include /etc/slurm/plugstack.conf.d/*" >> /etc/slurm/plugstack.conf
+$ sudo chown slurm:slurm -R /etc/slurm/
 $ sudo systemctl restart slurmd
 ```
 
@@ -33,6 +35,8 @@ $ make orig
 $ make deb
 $ sudo dpkg -i ../nvslurm-plugin-pyxis_*_amd64.deb
 $ sudo ln -s /usr/share/pyxis/pyxis.conf /etc/slurm/plugstack.conf.d/pyxis.conf
+$ sudo echo "include /etc/slurm/plugstack.conf.d/*" >> /etc/slurm/plugstack.conf
+$ sudo chown slurm:slurm -R /etc/slurm/
 $ sudo systemctl restart slurmd
 ```
 
@@ -41,6 +45,8 @@ $ sudo systemctl restart slurmd
 $ make rpm
 $ sudo rpm -i rpm/RPMS/x86_64/nvslurm-plugin-pyxis-*.x86_64.rpm
 $ sudo ln -s /usr/share/pyxis/pyxis.conf /etc/slurm/plugstack.conf.d/pyxis.conf
+$ sudo echo "include /etc/slurm/plugstack.conf.d/*" >> /etc/slurm/plugstack.conf
+$ sudo chown slurm:slurm -R /etc/slurm/
 $ sudo systemctl restart slurmd
 ```
 
