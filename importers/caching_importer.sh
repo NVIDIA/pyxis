@@ -8,7 +8,7 @@ readonly cache_dir="/tmp/pyxis-cache-${SLURM_JOB_UID}"
 readonly squashfs_temp_path="${cache_dir}/${SLURM_JOB_ID}.${SLURM_STEP_ID}.sqsh"
 
 # Since it's not an ephemeral squashfs file, we can use compression.
-export ENROOT_SQUASH_OPTIONS="-comp zstd -Xcompression-level 3"
+export ENROOT_SQUASH_OPTIONS="-comp zstd -Xcompression-level 3 -b 1M"
 
 case "${cmd}" in
     get)
