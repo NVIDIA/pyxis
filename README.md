@@ -109,17 +109,21 @@ $ srun --help
 
 ### `srun`
 ```console
-$ # Run a command on a worker node
+$ # Run a command on a compute node
 $ srun grep PRETTY /etc/os-release
-PRETTY_NAME="Ubuntu 20.04.2 LTS"
+PRETTY_NAME="Ubuntu 24.04.3 LTS"
 
 $ # run the same command, but now inside of a container
-$ srun --container-image=centos grep PRETTY /etc/os-release
-PRETTY_NAME="CentOS Linux 8"
+$ srun --container-image=almalinux:9 grep PRETTY /etc/os-release
+pyxis: importing docker image: almalinux:9
+pyxis: imported docker image: almalinux:9
+PRETTY_NAME="AlmaLinux 9.7 (Moss Jungle Cat)"
 
 $ # mount a file from the host and run the command on it, from inside the container
-$ srun --container-image=centos --container-mounts=/etc/os-release:/host/os-release grep PRETTY /host/os-release
-PRETTY_NAME="Ubuntu 20.04.2 LTS"
+$ srun --container-image=almalinux:9 --container-mounts=/etc/os-release:/host/os-release grep PRETTY /host/os-release
+pyxis: importing docker image: almalinux:9
+pyxis: imported docker image: almalinux:9
+PRETTY_NAME="Ubuntu 24.04.3 LTS"
 ```
 
 ### `sbatch`
