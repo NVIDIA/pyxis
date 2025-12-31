@@ -17,6 +17,7 @@ static struct plugin_args pyxis_args = {
 	.workdir = NULL,
 	.container_name = NULL,
 	.container_name_flags = NULL,
+	.container_cache = -1,
 	.container_save = NULL,
 	.mount_home = -1,
 	.remap_root = -1,
@@ -31,6 +32,7 @@ static int spank_option_image(int val, const char *optarg, int remote);
 static int spank_option_mount(int val, const char *optarg, int remote);
 static int spank_option_workdir(int val, const char *optarg, int remote);
 static int spank_option_container_name(int val, const char *optarg, int remote);
+static int spank_option_container_cache(int val, const char *optarg, int remote);
 static int spank_option_container_save(int val, const char *optarg, int remote);
 static int spank_option_container_mount_home(int val, const char *optarg, int remote);
 static int spank_option_container_remap_root(int val, const char *optarg, int remote);
@@ -68,6 +70,15 @@ struct spank_option spank_opts[] =
 			"Unnamed containers are removed after the slurm task is complete; named containers are not. "
 			"If a container with this name already exists, the existing container is used and the import is skipped.",
 		1, 0, spank_option_container_name
+	},
+	{
+		"container-cache",
+		NULL,
+		"[pyxis] enable persistent container root filesystem caching. "
+			"When set, pyxis derives a stable container name from the image identity and attempts to reuse "
+			"the container filesystem across jobs on the same node. "
+			"Incompatible with --container-writable and --container-save.",
+		0, 1, spank_option_container_cache
 	},
 	{
 		"container-save",
@@ -184,6 +195,13 @@ void pyxis_args_check_environment_variables(spank_t sp)
 	env_val = get_env_var(sp, "PYXIS_CONTAINER_NAME", buf, sizeof(buf));
 	if (env_val != NULL && pyxis_args.container_name == NULL)
 		spank_option_container_name(0, env_val, 0);
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_CACHE", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.container_cache == -1) {
+		ret = parse_bool(env_val);
+		if (ret >= 0)
+			spank_option_container_cache(ret, NULL, 0);
+	}
 
 	env_val = get_env_var(sp, "PYXIS_CONTAINER_SAVE", buf, sizeof(buf));
 	if (env_val != NULL && pyxis_args.container_save == NULL)
@@ -490,6 +508,19 @@ fail:
 	return (rv);
 }
 
+static int spank_option_container_cache(int val, const char *optarg, int remote)
+{
+	(void)optarg;
+	(void)remote;
+
+	/* Slurm may call us multiple times with the same value. */
+	if (pyxis_args.container_cache == val)
+		return (0);
+
+	pyxis_args.container_cache = val;
+	return (0);
+}
+
 static int spank_option_container_save(int val, const char *optarg, int remote)
 {
 	if (optarg == NULL || *optarg == '\0') {
@@ -630,6 +661,8 @@ struct plugin_args *pyxis_args_register(spank_t sp)
 bool pyxis_args_enabled(void)
 {
 	if (pyxis_args.image == NULL && pyxis_args.container_name == NULL) {
+		if (pyxis_args.container_cache == 1)
+			return (true);
 		if (pyxis_args.mounts_len > 0)
 			slurm_error("pyxis: ignoring --container-mounts because neither --container-image nor --container-name is set");
 		if (pyxis_args.workdir != NULL)

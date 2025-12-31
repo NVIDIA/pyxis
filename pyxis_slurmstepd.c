@@ -4,14 +4,18 @@
 
 #include <linux/limits.h>
 
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
 #include <errno.h>
 #include <fcntl.h>
 #include <ftw.h>
+#include <glob.h>
+#include <inttypes.h>
 #include <paths.h>
 #include <pthread.h>
 #include <sched.h>
@@ -34,6 +38,40 @@
 #include "enroot.h"
 #include "importer.h"
 
+static bool pyxis_debug = false;
+
+#define PYXIS_DEBUG_LOG(fmt, ...) do { \
+	if (pyxis_debug) \
+		slurm_spank_log("pyxis: debug: " fmt, ##__VA_ARGS__); \
+} while (0)
+
+static bool env_bool(spank_t sp, const char *name, bool def)
+{
+	char buf[64];
+	const char *val = NULL;
+
+	if (sp != NULL && spank_context() == S_CTX_REMOTE) {
+		spank_err_t rc = spank_getenv(sp, name, buf, sizeof(buf));
+		if (rc == ESPANK_SUCCESS)
+			val = buf;
+	}
+	if (val == NULL)
+		val = getenv(name);
+	if (val == NULL)
+		return def;
+
+	int ret = parse_bool(val);
+	if (ret >= 0)
+		return ret != 0;
+
+	char *end = NULL;
+	long n = strtol(val, &end, 10);
+	if (end != NULL && end != val && *end == '\0')
+		return n != 0;
+
+	return def;
+}
+
 struct container {
 	char *name;
 	char *squashfs_path;
@@ -41,6 +79,10 @@ struct container {
 	bool reuse_rootfs;
 	bool reuse_ns;
 	bool temporary_rootfs;
+	bool cache_mode;
+	char *cache_data_path_root;
+	char *cache_data_path;
+	int cache_lock_fd;
 	bool use_enroot_import;
 	bool use_enroot_load;
 	bool use_importer;
@@ -87,6 +129,368 @@ static double timespec_diff_ms(const struct timespec *start, const struct timesp
 	return (end->tv_sec - start->tv_sec) * 1000.0 + (end->tv_nsec - start->tv_nsec) / 1000000.0;
 }
 
+/* ---- container-cache helpers ---- */
+
+#define PYXIS_CACHE_CONTAINER_BASENAME_PREFIX "cache_u"
+#define PYXIS_CACHE_CONTAINER_PREFIX "pyxis_cache_"
+#define PYXIS_CACHE_LOCKFILE ".pyxis_cache_lock"
+
+static uint64_t fnv1a64_update(uint64_t h, const void *data, size_t len)
+{
+	const unsigned char *p = (const unsigned char *)data;
+	for (size_t i = 0; i < len; ++i) {
+		h ^= (uint64_t)p[i];
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+static bool image_looks_like_path(const char *image)
+{
+	/* Matches the logic used later in user_init() when detecting squashfs paths. */
+	return image != NULL && strspn(image, "./") > 0;
+}
+
+static int container_cache_build_basename(char **out, const char *image, uid_t uid)
+{
+	struct stat st;
+	uint64_t h = 1469598103934665603ULL;
+	char buf[128];
+	int ret;
+
+	if (out == NULL || image == NULL)
+		return (-1);
+
+	h = fnv1a64_update(h, image, strlen(image));
+
+	if (image_looks_like_path(image) && stat(image, &st) == 0) {
+		ret = snprintf(buf, sizeof(buf), "|%lld|%lld",
+			       (long long)st.st_mtime, (long long)st.st_size);
+		if (ret > 0 && (size_t)ret < sizeof(buf))
+			h = fnv1a64_update(h, buf, (size_t)ret);
+	}
+
+	ret = xasprintf(out, "%s%u_%016" PRIx64, PYXIS_CACHE_CONTAINER_BASENAME_PREFIX, (unsigned)uid, h);
+	if (ret < 0)
+		return (-1);
+
+	return (0);
+}
+
+static char *cache_data_path_for_uid(const char *root, uid_t uid)
+{
+	char *out = NULL;
+	int ret;
+
+	if (root == NULL)
+		return NULL;
+
+	ret = xasprintf(&out, "%s/%u", root, (unsigned)uid);
+	if (ret < 0)
+		return NULL;
+	return out;
+}
+
+static int mkdir_p_owned(const char *path, uid_t uid, gid_t gid, mode_t mode)
+{
+	char tmp[PATH_MAX];
+	size_t len;
+	struct stat st;
+	int ret;
+
+	if (path == NULL)
+		return (-1);
+
+	len = strnlen(path, sizeof(tmp));
+	if (len == 0 || len >= sizeof(tmp))
+		return (-1);
+	memcpy(tmp, path, len + 1);
+
+	for (char *p = tmp + 1; *p; ++p) {
+		if (*p != '/')
+			continue;
+		*p = '\0';
+		(void)mkdir(tmp, 0755);
+		*p = '/';
+	}
+
+	ret = mkdir(tmp, mode);
+	if (ret < 0 && errno != EEXIST)
+		return (-1);
+
+	if (stat(tmp, &st) < 0)
+		return (-1);
+	if (!S_ISDIR(st.st_mode)) {
+		errno = ENOTDIR;
+		return (-1);
+	}
+
+	if (st.st_uid != uid || st.st_gid != gid) {
+		if (chown(tmp, uid, gid) < 0) {
+			slurm_error("pyxis: couldn't chown %s: %s", tmp, strerror(errno));
+			return (-1);
+		}
+	}
+
+	if ((st.st_mode & 07777) != mode) {
+		if (chmod(tmp, mode) < 0) {
+			slurm_error("pyxis: couldn't chmod %s: %s", tmp, strerror(errno));
+			return (-1);
+		}
+	}
+	return (0);
+}
+
+static int touch_path(const char *path)
+{
+	struct timespec ts[2];
+
+	if (path == NULL)
+		return (-1);
+
+	clock_gettime(CLOCK_REALTIME, &ts[0]);
+	ts[1] = ts[0];
+	return utimensat(AT_FDCWD, path, ts, 0);
+}
+
+static int cache_lock_shared(const char *container_dir, int *out_fd)
+{
+	char lock_path[PATH_MAX];
+	int fd;
+	int ret;
+
+	if (container_dir == NULL || out_fd == NULL)
+		return (-1);
+
+	ret = snprintf(lock_path, sizeof(lock_path), "%s/%s", container_dir, PYXIS_CACHE_LOCKFILE);
+	if (ret < 0 || ret >= (int)sizeof(lock_path))
+		return (-1);
+
+	fd = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+	if (fd < 0)
+		return (-1);
+
+	if (flock(fd, LOCK_SH) < 0) {
+		close(fd);
+		return (-1);
+	}
+
+	*out_fd = fd;
+	return (0);
+}
+
+static int cache_gc_lock_fd(const char *data_path_root)
+{
+	char path[PATH_MAX];
+	int fd;
+	int ret;
+
+	if (data_path_root == NULL || data_path_root[0] == '\0')
+		return (-1);
+
+	ret = snprintf(path, sizeof(path), "%s/pyxis-container-cache-gc.lock", data_path_root);
+	if (ret < 0 || ret >= (int)sizeof(path))
+		return (-1);
+
+	fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+	if (fd < 0)
+		return (-1);
+	return fd;
+}
+
+static int rm_rf_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
+	(void)sb;
+	(void)ftwbuf;
+	if (typeflag == FTW_DP || typeflag == FTW_D)
+		(void)rmdir(fpath);
+	else
+		(void)unlink(fpath);
+	return 0;
+}
+
+static int rm_rf(const char *path)
+{
+	if (path == NULL)
+		return (-1);
+	return nftw(path, rm_rf_cb, 64, FTW_DEPTH | FTW_PHYS);
+}
+
+struct cache_candidate {
+	char *path;
+	time_t mtime;
+};
+
+static int cache_candidate_cmp(const void *a, const void *b)
+{
+	const struct cache_candidate *ca = (const struct cache_candidate *)a;
+	const struct cache_candidate *cb = (const struct cache_candidate *)b;
+	if (ca->mtime < cb->mtime)
+		return -1;
+	if (ca->mtime > cb->mtime)
+		return 1;
+	return 0;
+}
+
+static int cache_collect_candidates(const char *user_dirs_glob, struct cache_candidate **out, size_t *out_len)
+{
+	glob_t g_users = {0}, g_cache = {0};
+	struct cache_candidate *list = NULL;
+	size_t list_len = 0;
+	int ret;
+
+	if (out == NULL || out_len == NULL || user_dirs_glob == NULL)
+		return (-1);
+
+	ret = glob(user_dirs_glob, 0, NULL, &g_users);
+	if (ret != 0) {
+		globfree(&g_users);
+		*out = NULL;
+		*out_len = 0;
+		return (0);
+	}
+
+	for (size_t i = 0; i < g_users.gl_pathc; ++i) {
+		char pattern[PATH_MAX];
+		int n = snprintf(pattern, sizeof(pattern), "%s/%s*", g_users.gl_pathv[i], PYXIS_CACHE_CONTAINER_PREFIX);
+		if (n < 0 || n >= (int)sizeof(pattern))
+			continue;
+
+		memset(&g_cache, 0, sizeof(g_cache));
+		if (glob(pattern, 0, NULL, &g_cache) != 0) {
+			globfree(&g_cache);
+			continue;
+		}
+
+		for (size_t j = 0; j < g_cache.gl_pathc; ++j) {
+			struct stat st;
+			if (lstat(g_cache.gl_pathv[j], &st) < 0)
+				continue;
+			if (!S_ISDIR(st.st_mode))
+				continue;
+
+			struct cache_candidate *tmp = realloc(list, (list_len + 1) * sizeof(*list));
+			if (tmp == NULL)
+				continue;
+			list = tmp;
+			list[list_len].path = strdup(g_cache.gl_pathv[j]);
+			list[list_len].mtime = st.st_mtime;
+			list_len++;
+		}
+		globfree(&g_cache);
+	}
+
+	globfree(&g_users);
+	*out = list;
+	*out_len = list_len;
+	return (0);
+}
+
+static void cache_free_candidates(struct cache_candidate *list, size_t len)
+{
+	if (list == NULL)
+		return;
+	for (size_t i = 0; i < len; ++i)
+		free(list[i].path);
+	free(list);
+}
+
+static int cache_fs_used_percent(const char *path, int *out_used_percent)
+{
+	struct statvfs vfs;
+	unsigned long long total, avail, used;
+	int used_pct;
+
+	if (path == NULL || out_used_percent == NULL)
+		return (-1);
+
+	if (statvfs(path, &vfs) < 0)
+		return (-1);
+
+	total = (unsigned long long)vfs.f_blocks * (unsigned long long)vfs.f_frsize;
+	avail = (unsigned long long)vfs.f_bavail * (unsigned long long)vfs.f_frsize;
+	used = (total > avail) ? (total - avail) : 0;
+
+	used_pct = (total == 0) ? 0 : (int)((used * 100ULL) / total);
+	*out_used_percent = used_pct;
+	return (0);
+}
+
+static int cache_gc_if_needed(const char *data_path_root, int high_water, int low_water)
+{
+	int used_pct;
+	int ret;
+	int lock_fd = -1;
+	struct cache_candidate *cands = NULL;
+	size_t cands_len = 0;
+	char *user_glob = NULL;
+
+	if (data_path_root == NULL)
+		return (0);
+
+	ret = cache_fs_used_percent(data_path_root, &used_pct);
+	if (ret < 0)
+		return (0);
+
+	if (used_pct < high_water)
+		return (0);
+
+	/* Serialize GC for the whole cache root. */
+	lock_fd = cache_gc_lock_fd(data_path_root);
+	if (lock_fd < 0)
+		return (0);
+	if (flock(lock_fd, LOCK_EX) < 0) {
+		close(lock_fd);
+		return (0);
+	}
+
+	ret = xasprintf(&user_glob, "%s/*", data_path_root);
+	if (ret < 0 || user_glob == NULL)
+		goto out;
+
+	ret = cache_collect_candidates(user_glob, &cands, &cands_len);
+	if (ret < 0)
+		goto out;
+
+	qsort(cands, cands_len, sizeof(*cands), cache_candidate_cmp);
+
+	for (size_t i = 0; i < cands_len; ++i) {
+		char lock_path[PATH_MAX];
+		int fd;
+		int n;
+
+		ret = cache_fs_used_percent(data_path_root, &used_pct);
+		if (ret == 0 && used_pct < low_water)
+			break;
+
+		n = snprintf(lock_path, sizeof(lock_path), "%s/%s", cands[i].path, PYXIS_CACHE_LOCKFILE);
+		if (n < 0 || n >= (int)sizeof(lock_path))
+			continue;
+
+		fd = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+		if (fd < 0)
+			continue;
+
+		if (flock(fd, LOCK_EX | LOCK_NB) < 0) {
+			close(fd);
+			continue; /* in use */
+		}
+
+		slurm_info("pyxis: container-cache GC: evicting %s", cands[i].path);
+		(void)rm_rf(cands[i].path);
+		close(fd);
+	}
+
+out:
+	cache_free_candidates(cands, cands_len);
+	free(user_glob);
+	flock(lock_fd, LOCK_UN);
+	close(lock_fd);
+	return (0);
+}
+
+/* ---- end container-cache helpers ---- */
+
 static struct plugin_context context = {
 	.enabled = false,
 	.log_fd = -1,
@@ -101,6 +505,7 @@ static struct plugin_context context = {
 	.container = {
 		.name = NULL, .squashfs_path = NULL, .save_path = NULL,
 		.reuse_rootfs = false, .reuse_ns = false, .temporary_rootfs = false,
+		.cache_mode = false, .cache_data_path_root = NULL, .cache_data_path = NULL, .cache_lock_fd = -1,
 		.use_enroot_import = false, .use_enroot_load = false,
 		.use_importer = false,
 		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1
@@ -268,6 +673,7 @@ int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 
 	/* Check environment variables for default values after command-line processing */
 	pyxis_args_check_environment_variables(sp);
+	pyxis_debug = env_bool(sp, "PYXIS_DEBUG", false);
 
 	if (!pyxis_args_enabled())
 		return (0);
@@ -281,6 +687,60 @@ int pyxis_slurmstepd_post_opt(spank_t sp, int ac, char **av)
 	ret = enroot_create_user_runtime_dir();
 	if (ret < 0)
 		return (-1);
+
+	/* Pre-compute cache paths and run GC early (this hook runs with elevated privileges). */
+	if (context.args->container_cache == 1) {
+		context.container.cache_mode = true;
+
+		if (context.config.container_cache_data_path[0] == '\0') {
+			slurm_error("pyxis: error: --container-cache requires container_cache_data_path to be configured");
+			return (-1);
+		}
+
+		if (context.container.cache_data_path_root == NULL) {
+			char *root = NULL;
+
+			root = strdup(context.config.container_cache_data_path);
+			if (root != NULL) {
+				context.container.cache_data_path_root = root;
+				context.container.cache_data_path = cache_data_path_for_uid(root, context.job.uid);
+				if (context.container.cache_data_path != NULL)
+					(void)mkdir_p_owned(context.container.cache_data_path, context.job.uid, context.job.gid, 0700);
+			} else
+				return (-1);
+		}
+
+		/*
+		 * Only run GC when we're about to create a new cached rootfs.
+		 * (Avoid evicting a rootfs this job will just reuse.)
+		 */
+		if (context.args->image != NULL &&
+		    context.container.cache_data_path_root != NULL &&
+		    context.container.cache_data_path != NULL) {
+			char *cache_basename = NULL;
+			char *container_name = NULL;
+			char dir_path[PATH_MAX];
+			struct stat st;
+			int n;
+
+			ret = container_cache_build_basename(&cache_basename, context.args->image, context.job.uid);
+			if (ret == 0) {
+				ret = xasprintf(&container_name, "pyxis_%s", cache_basename);
+			}
+			if (ret >= 0 && container_name != NULL) {
+				n = snprintf(dir_path, sizeof(dir_path), "%s/%s", context.container.cache_data_path, container_name);
+				if (n > 0 && n < (int)sizeof(dir_path) &&
+				    (stat(dir_path, &st) < 0 || !S_ISDIR(st.st_mode))) {
+					(void)cache_gc_if_needed(context.container.cache_data_path_root,
+								 context.config.container_cache_gc_high,
+								 context.config.container_cache_gc_low);
+				}
+			}
+
+			free(container_name);
+			free(cache_basename);
+		}
+	}
 
 	return (0);
 }
@@ -422,6 +882,12 @@ static int enroot_set_env(void)
 			return (-1);
 	} else {
 		/* If writable/readonly was not set by the user, we rely on the setting specified in the enroot config. */
+	}
+
+	/* container-cache may override ENROOT_DATA_PATH to a persistent, node-local directory. */
+	if (context.container.cache_mode && context.container.cache_data_path != NULL) {
+		if (setenv("ENROOT_DATA_PATH", context.container.cache_data_path, 1) < 0)
+			return (-1);
 	}
 
 	if (setenv("PYXIS_RUNTIME_PATH", context.config.runtime_path, 1) < 0)
@@ -712,6 +1178,21 @@ static int enroot_container_create(void)
 
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
 	slurm_info("pyxis: completed container setup in %.0f ms", timespec_diff_ms(&start_time, &end_time));
+
+	/* Mark the cached rootfs as recently used and hold a shared lock for the job lifetime */
+	if (context.container.cache_mode && context.container.cache_data_path != NULL && context.container.cache_lock_fd < 0) {
+		char dir_path[PATH_MAX];
+		ret = snprintf(dir_path, sizeof(dir_path), "%s/%s", context.container.cache_data_path, context.container.name);
+		if (ret > 0 && ret < (int)sizeof(dir_path)) {
+			if (touch_path(dir_path) < 0)
+				PYXIS_DEBUG_LOG("container-cache: touch failed: %s", dir_path);
+			if (cache_lock_shared(dir_path, &context.container.cache_lock_fd) < 0) {
+				PYXIS_DEBUG_LOG("container-cache: lock failed: %s/%s", dir_path, PYXIS_CACHE_LOCKFILE);
+			} else {
+				PYXIS_DEBUG_LOG("container-cache: locked: %s/%s", dir_path, PYXIS_CACHE_LOCKFILE);
+			}
+		}
+	}
 
 	rv = 0;
 
@@ -1040,8 +1521,12 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 	int spank_argc = 0;
 	char **spank_argv = NULL;
 	char *container_name = NULL;
+	char *cache_basename = NULL;
 	pid_t pid;
 	int rv = -1;
+	enum container_scope name_scope;
+	const char *requested_name;
+	const char *requested_flags;
 
 	if (!context.enabled)
 		return (0);
@@ -1075,11 +1560,80 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		}
 	}
 
-	if (context.args->container_name != NULL) {
-		if (context.config.container_scope == SCOPE_JOB)
-			ret = xasprintf(&container_name, "pyxis_%u_%s", context.job.jobid, context.args->container_name);
+	name_scope = context.config.container_scope;
+	requested_name = context.args->container_name;
+	requested_flags = context.args->container_name_flags;
+
+	if (context.args->container_cache == 1) {
+		/* container-cache requires an image to derive a stable cache key */
+		if (context.args->image == NULL) {
+			slurm_error("pyxis: error: --container-cache requires --container-image");
+			goto fail;
+		}
+		if (context.args->container_save != NULL) {
+			slurm_error("pyxis: error: --container-cache is incompatible with --container-save");
+			goto fail;
+		}
+		if (context.args->writable == 1) {
+			slurm_error("pyxis: error: --container-cache is incompatible with --container-writable");
+			goto fail;
+		}
+		/* Force read-only containers in cache mode (prevents cross-job contamination) */
+		context.args->writable = 0;
+
+		/* Disallow special container-name flags in cache mode */
+		if (requested_flags != NULL && strcmp(requested_flags, "auto") != 0) {
+			slurm_error("pyxis: error: --container-cache is incompatible with --container-name flags (use plain --container-name or omit it)");
+			goto fail;
+		}
+
+		/* Compute a stable cache basename for this user+image */
+		ret = container_cache_build_basename(&cache_basename, context.args->image, context.job.uid);
+		if (ret < 0) {
+			slurm_error("pyxis: error: --container-cache: couldn't derive stable name");
+			goto fail;
+		}
+		PYXIS_DEBUG_LOG("container-cache: basename=%s", cache_basename);
+
+		requested_name = cache_basename;
+		requested_flags = "auto";
+		/* Override job-scoped naming; cached containers must outlive a single job */
+		name_scope = SCOPE_GLOBAL;
+		context.container.cache_mode = true;
+	}
+
+	/* In cache mode, determine a persistent ENROOT_DATA_PATH root and derive a per-user directory. */
+	if (context.container.cache_mode &&
+	    (context.container.cache_data_path_root == NULL || context.container.cache_data_path == NULL)) {
+		char *root = NULL;
+
+		if (context.config.container_cache_data_path[0] == '\0') {
+			slurm_error("pyxis: error: --container-cache requires container_cache_data_path to be configured");
+			goto fail;
+		}
+
+		root = strdup(context.config.container_cache_data_path);
+
+		if (root != NULL) {
+			context.container.cache_data_path_root = root;
+			context.container.cache_data_path = cache_data_path_for_uid(root, context.job.uid);
+			PYXIS_DEBUG_LOG("container-cache: ENROOT_DATA_PATH root=%s", root);
+			PYXIS_DEBUG_LOG("container-cache: ENROOT_DATA_PATH=%s",
+					context.container.cache_data_path ? context.container.cache_data_path : "(null)");
+			if (context.container.cache_data_path != NULL) {
+				if (mkdir_p_owned(context.container.cache_data_path, context.job.uid, context.job.gid, 0700) < 0)
+					PYXIS_DEBUG_LOG("container-cache: couldn't init ENROOT_DATA_PATH=%s",
+							context.container.cache_data_path);
+			}
+		} else
+			goto fail;
+	}
+
+	if (requested_name != NULL) {
+		if (name_scope == SCOPE_JOB)
+			ret = xasprintf(&container_name, "pyxis_%u_%s", context.job.jobid, requested_name);
 		else
-			ret = xasprintf(&container_name, "pyxis_%s", context.args->container_name);
+			ret = xasprintf(&container_name, "pyxis_%s", requested_name);
 		if (ret < 0)
 			goto fail;
 
@@ -1089,15 +1643,15 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			goto fail;
 		}
 
-		if (strcmp(context.args->container_name_flags, "create") == 0 && pid >= 0) {
+		if (requested_flags != NULL && strcmp(requested_flags, "create") == 0 && pid >= 0) {
 			slurm_error("pyxis: error: \"create\" flag was passed to --container-name but the container already exists");
 			goto fail;
 		}
-		if (strcmp(context.args->container_name_flags, "exec") == 0 && pid <= 0) {
+		if (requested_flags != NULL && strcmp(requested_flags, "exec") == 0 && pid <= 0) {
 			slurm_error("pyxis: error: \"exec\" flag was passed to --container-name but the container is not running");
 			goto fail;
 		}
-		if (strcmp(context.args->container_name_flags, "no_exec") == 0 && pid > 0)
+		if (requested_flags != NULL && strcmp(requested_flags, "no_exec") == 0 && pid > 0)
 			pid = 0;
 
 		if (pid > 0) {
@@ -1116,7 +1670,7 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 		context.container.name = container_name;
 		container_name = NULL;
 	} else {
-		if (context.config.container_scope == SCOPE_JOB)
+		if (name_scope == SCOPE_JOB)
 			ret = xasprintf(&context.container.name, "pyxis_%u_%u.%u", context.job.jobid, context.job.jobid, context.job.stepid);
 		else
 			ret = xasprintf(&context.container.name, "pyxis_%u.%u", context.job.jobid, context.job.stepid);
@@ -1165,6 +1719,21 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			goto fail;
 	}
 
+	/* If cache mode is enabled and the rootfs already exists, mark it as recently used and lock it */
+	if (context.container.cache_mode && context.container.reuse_rootfs && context.container.cache_data_path != NULL) {
+		char dir_path[PATH_MAX];
+		ret = snprintf(dir_path, sizeof(dir_path), "%s/%s", context.container.cache_data_path, context.container.name);
+		if (ret > 0 && ret < (int)sizeof(dir_path)) {
+			if (touch_path(dir_path) < 0)
+				PYXIS_DEBUG_LOG("container-cache: touch failed: %s", dir_path);
+			if (cache_lock_shared(dir_path, &context.container.cache_lock_fd) < 0) {
+				PYXIS_DEBUG_LOG("container-cache: lock failed: %s/%s", dir_path, PYXIS_CACHE_LOCKFILE);
+			} else {
+				PYXIS_DEBUG_LOG("container-cache: locked: %s/%s", dir_path, PYXIS_CACHE_LOCKFILE);
+			}
+		}
+	}
+
 	rv = 0;
 
 fail:
@@ -1179,6 +1748,7 @@ fail:
 		slurm_debug("pyxis: user_init() failed with rc=%d; postponing error for now, will report later", rv);
 	context.user_init_rv = rv;
 	free(container_name);
+	free(cache_basename);
 
 	return (0);
 }
@@ -1518,6 +2088,8 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	free(context.container.name);
 	free(context.container.squashfs_path);
 	free(context.container.save_path);
+	free(context.container.cache_data_path_root);
+	free(context.container.cache_data_path);
 
 	if (context.job.environ != NULL) {
 		for (int i = 0; context.job.environ[i] != NULL; ++i)
@@ -1529,6 +2101,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	xclose(context.container.mntns_fd);
 	xclose(context.container.cgroupns_fd);
 	xclose(context.container.cwd_fd);
+	xclose(context.container.cache_lock_fd);
 	xclose(context.log_fd);
 
 	ret = shm_destroy(context.shm);
