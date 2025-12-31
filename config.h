@@ -20,6 +20,9 @@ struct plugin_config {
 	bool sbatch_support;
 	bool use_enroot_load;
 	char importer_path[PATH_MAX];
+	char container_cache_data_path[PATH_MAX];
+	int container_cache_gc_high;
+	int container_cache_gc_low;
 };
 
 int pyxis_config_parse(struct plugin_config *config, int ac, char **av);
