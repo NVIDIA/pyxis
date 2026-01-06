@@ -3,6 +3,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <slurm/spank.h>
@@ -24,6 +25,8 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 {
 	int ret;
 	const char *optarg;
+	const char *cache_data_prefix = "container_cache_data_path=";
+	const size_t cache_data_prefix_len = sizeof("container_cache_data_path=") - 1;
 
 	memset(config, 0, sizeof(*config));
 
@@ -38,6 +41,9 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	config->sbatch_support = true;
 	config->use_enroot_load = false;
 	config->importer_path[0] = '\0';
+	config->container_cache_data_path[0] = '\0';
+	config->container_cache_gc_high = 85;
+	config->container_cache_gc_low = 80;
 
 	for (int i = 0; i < ac; ++i) {
 		if (strncmp("runtime_path=", av[i], 13) == 0) {
@@ -88,10 +94,31 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 				slurm_error("pyxis: importer: path too long: %s", optarg);
 				return (-1);
 			}
+		} else if (strncmp(cache_data_prefix, av[i], cache_data_prefix_len) == 0) {
+			optarg = av[i] + cache_data_prefix_len;
+			ret = snprintf(config->container_cache_data_path, sizeof(config->container_cache_data_path), "%s", optarg);
+			if (ret < 0 || ret >= (int)sizeof(config->container_cache_data_path)) {
+				slurm_error("pyxis: container_cache_data_path: path too long: %s", optarg);
+				return (-1);
+			}
+		} else if (strncmp("container_cache_gc_high=", av[i], 24) == 0) {
+			optarg = av[i] + 24;
+			config->container_cache_gc_high = atoi(optarg);
+		} else if (strncmp("container_cache_gc_low=", av[i], 23) == 0) {
+			optarg = av[i] + 23;
+			config->container_cache_gc_low = atoi(optarg);
 		} else {
 			slurm_error("pyxis: unknown configuration option: %s", av[i]);
 			return (-1);
 		}
+	}
+
+	if (config->container_cache_gc_high < 1 || config->container_cache_gc_high > 99 ||
+	    config->container_cache_gc_low < 1 || config->container_cache_gc_low > 99 ||
+	    config->container_cache_gc_low >= config->container_cache_gc_high) {
+		slurm_error("pyxis: invalid container cache GC configuration: high=%d low=%d",
+			    config->container_cache_gc_high, config->container_cache_gc_low);
+		return (-1);
 	}
 
 	return (0);
