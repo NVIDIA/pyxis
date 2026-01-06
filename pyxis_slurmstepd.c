@@ -134,6 +134,7 @@ static double timespec_diff_ms(const struct timespec *start, const struct timesp
 #define PYXIS_CACHE_CONTAINER_BASENAME_PREFIX "cache_u"
 #define PYXIS_CACHE_CONTAINER_PREFIX "pyxis_cache_"
 #define PYXIS_CACHE_LOCKFILE ".pyxis_cache_lock"
+#define PYXIS_CACHE_TMP_CONTAINER_PREFIX "pyxis_tmp_"
 
 static uint64_t fnv1a64_update(uint64_t h, const void *data, size_t len)
 {
@@ -266,7 +267,33 @@ static int cache_lock_shared(const char *container_dir, int *out_fd)
 	if (ret < 0 || ret >= (int)sizeof(lock_path))
 		return (-1);
 
-	fd = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+	fd = open(lock_path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return (-1);
+
+	if (flock(fd, LOCK_SH) < 0) {
+		close(fd);
+		return (-1);
+	}
+
+	*out_fd = fd;
+	return (0);
+}
+
+static int cache_lock_create_shared(const char *container_dir, int *out_fd)
+{
+	char lock_path[PATH_MAX];
+	int fd;
+	int ret;
+
+	if (container_dir == NULL || out_fd == NULL)
+		return (-1);
+
+	ret = snprintf(lock_path, sizeof(lock_path), "%s/%s", container_dir, PYXIS_CACHE_LOCKFILE);
+	if (ret < 0 || ret >= (int)sizeof(lock_path))
+		return (-1);
+
+	fd = open(lock_path, O_CREAT | O_RDONLY | O_CLOEXEC, 0644);
 	if (fd < 0)
 		return (-1);
 
@@ -467,9 +494,14 @@ static int cache_gc_if_needed(const char *data_path_root, int high_water, int lo
 		if (n < 0 || n >= (int)sizeof(lock_path))
 			continue;
 
-		fd = open(lock_path, O_CREAT | O_RDWR | O_CLOEXEC, 0644);
-		if (fd < 0)
+		fd = open(lock_path, O_RDONLY | O_CLOEXEC);
+		if (fd < 0) {
+			if (errno == ENOENT) {
+				slurm_info("pyxis: container-cache GC: removing stale (missing lock): %s", cands[i].path);
+				(void)rm_rf(cands[i].path);
+			}
 			continue;
+		}
 
 		if (flock(fd, LOCK_EX | LOCK_NB) < 0) {
 			close(fd);
@@ -1110,8 +1142,23 @@ static int enroot_container_create(void)
 {
 	int ret;
 	char *enroot_uri = NULL;
+	const char *final_name = context.container.name;
+	char *create_name = context.container.name;
+	char *tmp_name = NULL;
+	char tmp_dir_path[PATH_MAX];
+	char final_dir_path[PATH_MAX];
+	bool cache_atomic = false;
 	struct timespec start_time, end_time;
 	int rv = -1;
+
+	/* In cache mode, build into a temporary rootfs name and atomically publish it via rename(2). */
+	if (context.container.cache_mode && context.container.cache_data_path != NULL && context.container.name != NULL) {
+		cache_atomic = true;
+		ret = xasprintf(&tmp_name, "%s%s_%u", PYXIS_CACHE_TMP_CONTAINER_PREFIX, context.container.name, (unsigned)getpid());
+		if (ret < 0 || tmp_name == NULL)
+			goto fail;
+		create_name = tmp_name;
+	}
 
 	if (context.container.use_enroot_import || context.container.use_enroot_load || context.container.use_importer) {
 		if (strncmp("docker://", context.args->image, sizeof("docker://") - 1) == 0 ||
@@ -1137,7 +1184,7 @@ static int enroot_container_create(void)
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
 
 	if (context.container.use_enroot_load) {
-		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "load", "--name", context.container.name, enroot_uri, NULL });
+		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "load", "--name", create_name, enroot_uri, NULL });
 		if (ret < 0) {
 			slurm_error("pyxis: failed to import docker image");
 			enroot_print_log_ctx(true);
@@ -1165,12 +1212,44 @@ static int enroot_container_create(void)
 		}
 
 		if (context.container.squashfs_path != NULL) {
-			slurm_info("pyxis: creating container filesystem: %s", context.container.name);
+			slurm_info("pyxis: creating container filesystem: %s", final_name);
 
-			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, context.container.squashfs_path, NULL });
+			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", create_name, context.container.squashfs_path, NULL });
 			if (ret < 0) {
 				slurm_error("pyxis: failed to create container filesystem");
 				enroot_print_log_ctx(true);
+				goto fail;
+			}
+		}
+	}
+
+	/* Publish the cache rootfs only after a successful create/load. */
+	if (cache_atomic) {
+		ret = snprintf(tmp_dir_path, sizeof(tmp_dir_path), "%s/%s", context.container.cache_data_path, create_name);
+		if (ret <= 0 || ret >= (int)sizeof(tmp_dir_path))
+			goto fail;
+		ret = snprintf(final_dir_path, sizeof(final_dir_path), "%s/%s", context.container.cache_data_path, final_name);
+		if (ret <= 0 || ret >= (int)sizeof(final_dir_path))
+			goto fail;
+
+		/* Create+hold the cache lock before the final name becomes visible. */
+		if (context.container.cache_lock_fd < 0) {
+			if (cache_lock_create_shared(tmp_dir_path, &context.container.cache_lock_fd) < 0)
+				goto fail;
+			PYXIS_DEBUG_LOG("container-cache: locked: %s/%s", tmp_dir_path, PYXIS_CACHE_LOCKFILE);
+		}
+
+		if (rename(tmp_dir_path, final_dir_path) < 0) {
+			if (errno == EEXIST || errno == ENOTEMPTY) {
+				/* Another job won the race; drop our temp rootfs and reuse the published one. */
+				xclose(context.container.cache_lock_fd);
+				context.container.cache_lock_fd = -1;
+				(void)rm_rf(tmp_dir_path);
+				if (cache_lock_shared(final_dir_path, &context.container.cache_lock_fd) < 0)
+					PYXIS_DEBUG_LOG("container-cache: lock failed: %s/%s", final_dir_path, PYXIS_CACHE_LOCKFILE);
+				else
+					PYXIS_DEBUG_LOG("container-cache: locked: %s/%s", final_dir_path, PYXIS_CACHE_LOCKFILE);
+			} else {
 				goto fail;
 			}
 		}
@@ -1180,16 +1259,17 @@ static int enroot_container_create(void)
 	slurm_info("pyxis: completed container setup in %.0f ms", timespec_diff_ms(&start_time, &end_time));
 
 	/* Mark the cached rootfs as recently used and hold a shared lock for the job lifetime */
-	if (context.container.cache_mode && context.container.cache_data_path != NULL && context.container.cache_lock_fd < 0) {
+	if (context.container.cache_mode && context.container.cache_data_path != NULL) {
 		char dir_path[PATH_MAX];
 		ret = snprintf(dir_path, sizeof(dir_path), "%s/%s", context.container.cache_data_path, context.container.name);
 		if (ret > 0 && ret < (int)sizeof(dir_path)) {
 			if (touch_path(dir_path) < 0)
 				PYXIS_DEBUG_LOG("container-cache: touch failed: %s", dir_path);
-			if (cache_lock_shared(dir_path, &context.container.cache_lock_fd) < 0) {
-				PYXIS_DEBUG_LOG("container-cache: lock failed: %s/%s", dir_path, PYXIS_CACHE_LOCKFILE);
-			} else {
-				PYXIS_DEBUG_LOG("container-cache: locked: %s/%s", dir_path, PYXIS_CACHE_LOCKFILE);
+			if (context.container.cache_lock_fd < 0) {
+				if (cache_lock_create_shared(dir_path, &context.container.cache_lock_fd) < 0)
+					PYXIS_DEBUG_LOG("container-cache: lock failed: %s/%s", dir_path, PYXIS_CACHE_LOCKFILE);
+				else
+					PYXIS_DEBUG_LOG("container-cache: locked: %s/%s", dir_path, PYXIS_CACHE_LOCKFILE);
 			}
 		}
 	}
@@ -1198,6 +1278,13 @@ static int enroot_container_create(void)
 
 fail:
 	free(enroot_uri);
+	if (cache_atomic && tmp_name != NULL && context.container.cache_data_path != NULL) {
+		char path[PATH_MAX];
+		ret = snprintf(path, sizeof(path), "%s/%s", context.container.cache_data_path, tmp_name);
+		if (ret > 0 && ret < (int)sizeof(path))
+			(void)rm_rf(path);
+	}
+	free(tmp_name);
 	if (context.container.use_enroot_import && context.container.squashfs_path != NULL) {
 		ret = unlink(context.container.squashfs_path);
 		if (ret < 0)

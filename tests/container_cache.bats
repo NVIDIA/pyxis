@@ -273,7 +273,7 @@ PY
     touch -d "1970-01-01 00:00:00" "${locked_dir}" 2>/dev/null || true
     touch -d "1970-01-01 00:00:01" "${unlocked_dir}" 2>/dev/null || true
 
-    flock -s "${lock_file}" -c 'sleep 300' &
+    flock -s "${lock_file}" sleep 300 &
     lock_pid=$!
 
     run_srun --container-cache --container-image="${link}" true
@@ -356,6 +356,36 @@ PY
     run_srun --container-cache --container-image="${link}" true
     [ -d "${container_dir}" ]
 
+    _cleanup_cache_for_image "${link}"
+    rm -f "${link}" || true
+}
+
+@test "container-cache ignores stale temp build dirs and still creates the final cache rootfs" {
+    local img link uid root name dir tmp_dir tmp_sentinel
+    img="$(_test_image)"
+    link="$(_mkimglink "${img}")"
+
+    uid="$(id -u)"
+    root="$(_cache_root)"
+    name="$(_cache_container_name_for_image "${link}")"
+    dir="$(_cache_container_dir_for_image "${link}")"
+
+    tmp_dir="${root}/${uid}/pyxis_tmp_${name}_${RANDOM}"
+    tmp_sentinel="${tmp_dir}/.pyxis_tmp_sentinel"
+
+    rm -rf "${dir}" "${tmp_dir}" || true
+    mkdir -p "${tmp_dir}"
+    echo "tmp" > "${tmp_sentinel}"
+    rm -f "${tmp_dir}/.pyxis_cache_lock" || true
+
+    run_srun --container-cache --container-image="${link}" true
+
+    [ -d "${dir}" ]
+    [ -f "${dir}/.pyxis_cache_lock" ]
+    [ -d "${tmp_dir}" ]
+    [ -f "${tmp_sentinel}" ]
+
+    rm -rf "${tmp_dir}" || true
     _cleanup_cache_for_image "${link}"
     rm -f "${link}" || true
 }
