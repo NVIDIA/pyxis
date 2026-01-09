@@ -38,6 +38,7 @@ struct container {
 	char *name;
 	char *squashfs_path;
 	char *save_path;
+	char *cwd_path;
 	bool reuse_rootfs;
 	bool reuse_ns;
 	bool temporary_rootfs;
@@ -47,7 +48,6 @@ struct container {
 	int userns_fd;
 	int mntns_fd;
 	int cgroupns_fd;
-	int cwd_fd;
 };
 
 struct job_info {
@@ -99,11 +99,11 @@ static struct plugin_context context = {
 		.environ = NULL, .cwd = { 0 }
 	},
 	.container = {
-		.name = NULL, .squashfs_path = NULL, .save_path = NULL,
+		.name = NULL, .squashfs_path = NULL, .save_path = NULL, .cwd_path = NULL,
 		.reuse_rootfs = false, .reuse_ns = false, .temporary_rootfs = false,
 		.use_enroot_import = false, .use_enroot_load = false,
 		.use_importer = false,
-		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .cwd_fd = -1
+		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1,
 	},
 	.user_init_rv = 0,
 };
@@ -784,14 +784,23 @@ static int container_get_cwd(pid_t pid, struct container *container)
 {
 	int ret;
 	char path[PATH_MAX];
+	char cwd[PATH_MAX];
+	ssize_t len;
 
 	ret = snprintf(path, sizeof(path), "/proc/%d/cwd", pid);
 	if (ret < 0 || ret >= sizeof(path))
 		return (-1);
 
-	container->cwd_fd = open(path, O_RDONLY | O_CLOEXEC);
-	if (container->cwd_fd < 0) {
-		slurm_error("pyxis: couldn't open cwd fd: %s", strerror(errno));
+	len = readlink(path, cwd, sizeof(cwd) - 1);
+	if (len < 0) {
+		slurm_error("pyxis: couldn't read container cwd: %s", strerror(errno));
+		return (-1);
+	}
+	cwd[len] = '\0';
+
+	container->cwd_path = strdup(cwd);
+	if (container->cwd_path == NULL) {
+		slurm_error("pyxis: couldn't allocate cwd path");
 		return (-1);
 	}
 
@@ -1383,9 +1392,9 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 			goto fail;
 		}
 	} else {
-		ret = fchdir(context.container.cwd_fd);
+		ret = chdir(context.container.cwd_path);
 		if (ret < 0) {
-			slurm_error("pyxis: couldn't chdir to container cwd: %s", strerror(errno));
+			slurm_error("pyxis: couldn't chdir to container cwd %s: %s", context.container.cwd_path, strerror(errno));
 			goto fail;
 		}
 	}
@@ -1528,7 +1537,7 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	xclose(context.container.userns_fd);
 	xclose(context.container.mntns_fd);
 	xclose(context.container.cgroupns_fd);
-	xclose(context.container.cwd_fd);
+	free(context.container.cwd_path);
 	xclose(context.log_fd);
 
 	ret = shm_destroy(context.shm);
