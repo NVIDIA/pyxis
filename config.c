@@ -38,6 +38,7 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 	config->sbatch_support = true;
 	config->use_enroot_load = false;
 	config->importer_path[0] = '\0';
+	config->use_squashfuse = false;
 
 	for (int i = 0; i < ac; ++i) {
 		if (strncmp("runtime_path=", av[i], 13) == 0) {
@@ -88,6 +89,14 @@ int pyxis_config_parse(struct plugin_config *config, int ac, char **av)
 				slurm_error("pyxis: importer: path too long: %s", optarg);
 				return (-1);
 			}
+		} else if (strncmp("use_squashfuse=", av[i], 15) == 0) {
+			optarg = av[i] + 15;
+			ret = parse_bool(optarg);
+			if (ret < 0) {
+				slurm_error("pyxis: use_squashfuse: invalid value: %s", optarg);
+				return (-1);
+			}
+			config->use_squashfuse = ret;
 		} else {
 			slurm_error("pyxis: unknown configuration option: %s", av[i]);
 			return (-1);

@@ -45,6 +45,7 @@ struct container {
 	bool use_enroot_import;
 	bool use_enroot_load;
 	bool use_importer;
+	bool use_squashfuse;
 	int userns_fd;
 	int mntns_fd;
 	int cgroupns_fd;
@@ -102,7 +103,7 @@ static struct plugin_context context = {
 		.name = NULL, .squashfs_path = NULL, .save_path = NULL, .cwd_path = NULL,
 		.reuse_rootfs = false, .reuse_ns = false, .temporary_rootfs = false,
 		.use_enroot_import = false, .use_enroot_load = false,
-		.use_importer = false,
+		.use_importer = false, .use_squashfuse = false,
 		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1,
 	},
 	.user_init_rv = 0,
@@ -647,6 +648,11 @@ static int enroot_container_create(void)
 	struct timespec start_time, end_time;
 	int rv = -1;
 
+	if (context.container.use_squashfuse) {
+		slurm_info("pyxis: skipping container creation (squashfuse enabled)");
+		return 0;
+	}
+
 	if (context.container.use_enroot_import || context.container.use_enroot_load || context.container.use_importer) {
 		if (strncmp("docker://", context.args->image, sizeof("docker://") - 1) == 0 ||
 		    strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) == 0) {
@@ -906,8 +912,15 @@ static pid_t enroot_container_start(void)
 	pid_t pid = -1;
 	int status;
 	pid_t rv = -1;
+	char *target;
 
-	slurm_info("pyxis: starting container: %s", context.container.name);
+	if (context.container.use_squashfuse) {
+		target = context.container.squashfs_path;
+		slurm_info("pyxis: starting container from squashfs: %s", target);
+	} else {
+		target = context.container.name;
+		slurm_info("pyxis: starting container: %s", target);
+	}
 
 	ret = enroot_create_start_config(&conf_file);
 	if (ret < 0) {
@@ -925,7 +938,7 @@ static pid_t enroot_container_start(void)
 	 * This requires a shell inside the container, but we could do the same with a
 	 * small static C program bind-mounted inside the container.
 	*/
-	pid = enroot_exec_ctx((char *const[]){ "enroot", "start", "--conf", conf_file, context.container.name, "sh", "-c",
+	pid = enroot_exec_ctx((char *const[]){ "enroot", "start", "--conf", conf_file, target, "sh", "-c",
 					       "kill -STOP $$ ; exit 0", NULL });
 	if (pid < 0) {
 		slurm_error("pyxis: failed to start container");
@@ -1143,6 +1156,13 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			context.container.squashfs_path = strdup(context.args->image);
 			if (context.container.squashfs_path == NULL)
 				goto fail;
+
+			/* Check if we should mount the squashfs directly instead of creating a container */
+			if (context.config.use_squashfuse &&
+			    context.container.temporary_rootfs &&
+			    context.args->container_save == NULL) {
+				context.container.use_squashfuse = true;
+			}
 		} else {
 			/* Determine how the image is going to be loaded */
 			if (context.config.importer_path[0] != '\0') {
@@ -1300,9 +1320,12 @@ static int enroot_stop_once(struct container *container, struct shared_memory *s
 
 	/* Last task to start can stop the container process. */
 	if (atomic_fetch_add(&shm->started_tasks, 1) == context.job.local_task_count - 1) {
-		ret = enroot_container_stop(shm->pid);
-		if (ret < 0)
-			goto fail;
+		/* the enroot process must stay alive to keep the FUSE processes alive */
+		if (!container->use_squashfuse) {
+			ret = enroot_container_stop(shm->pid);
+			if (ret < 0)
+				goto fail;
+		}
 
 		shm->pid = -1;
 		shm->ns_pid = -1;
@@ -1484,7 +1507,7 @@ static int enroot_cleanup(void)
 		}
 	}
 
-	if (context.container.temporary_rootfs) {
+	if (context.container.temporary_rootfs && !context.container.use_squashfuse) {
 		slurm_info("pyxis: removing container filesystem: %s", context.container.name);
 
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "remove", "-f", context.container.name, NULL });

@@ -20,6 +20,7 @@ struct plugin_config {
 	bool sbatch_support;
 	bool use_enroot_load;
 	char importer_path[PATH_MAX];
+	bool use_squashfuse;
 };
 
 int pyxis_config_parse(struct plugin_config *config, int ac, char **av);
