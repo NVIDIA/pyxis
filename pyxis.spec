@@ -55,6 +55,9 @@ chmod +x %{_builddir}/find-requires
 
 
 %changelog
+* Fri Feb 06 2026 NVIDIA CORPORATION <cudatools@nvidia.com> - 0.22.0-1
+- Release v0.22.0
+
 * Thu Oct 02 2025 NVIDIA CORPORATION <cudatools@nvidia.com> - 0.21.0-1
 - Release v0.21.0
 
