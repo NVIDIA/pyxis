@@ -71,6 +71,12 @@ function teardown() {
     [ "${lines[-1]}" == "/tmp" ]
 }
 
+@test "squashfs with --no-container-remap-root" {
+    run_enroot import -o ubuntu.sqsh docker://ubuntu:24.04
+    run_srun --container-image=./ubuntu.sqsh --no-container-remap-root id -u
+    [ "${lines[-1]}" -eq $(id -u) ]
+}
+
 @test "squashfs with multiple tasks" {
     run_enroot import -o ubuntu.sqsh docker://ubuntu:24.04
     run_srun -n 4 --container-image=./ubuntu.sqsh hostname
