@@ -68,16 +68,29 @@ static int pyxis_container_cleanup(uid_t uid, gid_t gid, uint32_t jobid)
 	while ((name = get_line_from_file(fp)) != NULL) {
 		/* Remove named and unnamed pyxis containers for this job */
 		if (sscanf(name, "pyxis_%u_%*s%n", &id, &n) == 1) {
+			int log_fd = -1;
+
 			if (strlen(name) != n || id != jobid)
 				continue;
 
 			slurm_verbose("pyxis: removing container %s", name);
-			ret = enroot_exec_wait(uid, gid, -1, NULL,
+
+			log_fd = pyxis_memfd_create("enroot-log", MFD_CLOEXEC);
+			if (log_fd < 0) {
+				slurm_error("pyxis: couldn't create in-memory log file: %s", strerror(errno));
+				goto fail;
+			}
+
+			ret = enroot_exec_wait(uid, gid, log_fd, NULL,
 					       (char *const[]){ "enroot", "remove", "-f", name, NULL });
 			if (ret < 0) {
 				slurm_error("pyxis: failed to remove container %s", name);
+				memfd_print_log(&log_fd, true, "enroot");
+				xclose(log_fd);
 				goto fail;
 			}
+
+			xclose(log_fd);
 		}
 
 		free(name);

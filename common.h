@@ -74,4 +74,6 @@ int array_add_unique(char ***array, size_t *len, const char *entry);
 
 void array_free(char ***array, size_t *len);
 
+void memfd_print_log(int *log_fd, bool error, const char *tag);
+
 #endif /* COMMON_H_ */
