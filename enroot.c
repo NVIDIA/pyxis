@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <sys/wait.h>
@@ -38,6 +38,20 @@ pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
 	}
 
 	if (pid == 0) {
+		/*
+		 * Move log_fd out of the standard fd range (0-2) if needed.
+		 * In some contexts (e.g. SPANK epilog), fd 0 is not open,
+		 * so memfd_create can return fd 0. Without this, the dup2
+		 * to STDIN_FILENO below would clobber log_fd.
+		 */
+		if (log_fd >= 0 && log_fd <= 2) {
+			int new_fd = fcntl(log_fd, F_DUPFD_CLOEXEC, 3);
+			if (new_fd < 0)
+				_exit(EXIT_FAILURE);
+			close(log_fd);
+			log_fd = new_fd;
+		}
+
 		null_fd = open("/dev/null", O_RDWR);
 		if (null_fd < 0)
 			_exit(EXIT_FAILURE);

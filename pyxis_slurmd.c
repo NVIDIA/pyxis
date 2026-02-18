@@ -153,25 +153,11 @@ static int pyxis_container_cleanup(uid_t uid, gid_t gid, uint32_t jobid)
 }
 
 /*
- * Fix a few quirks of the SPANK epilog process state:
- * - The environment is empty
- * - File descriptor 0 is not open
+ * Fix the environment of the SPANK epilog process
  */
 static int job_epilog_fixup(void)
 {
-	int null_fd;
 	int ret;
-
-	null_fd = open("/dev/null", O_RDWR);
-	if (null_fd < 0)
-		return (-1);
-
-	if (null_fd != STDIN_FILENO) {
-		ret = dup2(null_fd, STDIN_FILENO);
-		xclose(null_fd);
-		if (ret < 0)
-			return (-1);
-	}
 
 	ret = setenv("PATH", "/usr/local/bin:/usr/bin:/bin", 0);
 	if (ret < 0)
