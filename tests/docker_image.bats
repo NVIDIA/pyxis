@@ -32,6 +32,17 @@ load ./common
     run_srun --container-image=ubuntu:24.04 --container-remap-root bash -c 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata'
 }
 
+@test "Docker Hub ubuntu:26.04" {
+    run_srun --container-image=ubuntu:26.04 grep 'Resolute Raccoon' /etc/os-release
+    # Test for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1114610
+    # Also see https://github.com/linux-pam/linux-pam/issues/944
+    run_srun --container-image=ubuntu:26.04 --container-remap-root \
+             bash -c ' \
+               echo "MY_LIST=1;2;3;4" >> /etc/environment && \
+               apt-get update && \
+               apt-get install -y --no-install-recommends install-info'
+}
+
 @test "Docker Hub centos:5" {
     run_srun --container-image=centos:5 grep 'CentOS release 5.11 (Final)' /etc/redhat-release
 }
