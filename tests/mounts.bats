@@ -79,6 +79,26 @@ load ./common
     [ "${status}" -ne 0 ]
 }
 
+@test "--container-mounts space in source path" {
+    mkdir -p "/tmp/pyxis test dir"
+    echo "hello" > "/tmp/pyxis test dir/file.txt"
+    run_srun --container-mounts="/tmp/pyxis test dir:/mnt/test" --container-image=ubuntu:18.04 cat /mnt/test/file.txt
+    grep -q 'hello' <<< "${output}"
+    rm -rf "/tmp/pyxis test dir"
+}
+
+@test "--container-mounts space in destination path" {
+    run_srun --container-mounts="/tmp:/mnt/my mount" --container-image=ubuntu:18.04 findmnt "/mnt/my mount"
+}
+
+@test "--container-mounts space in source and destination" {
+    mkdir -p "/tmp/pyxis test dir"
+    echo "hello" > "/tmp/pyxis test dir/file.txt"
+    run_srun --container-mounts="/tmp/pyxis test dir:/mnt/my mount" --container-image=ubuntu:18.04 cat "/mnt/my mount/file.txt"
+    grep -q 'hello' <<< "${output}"
+    rm -rf "/tmp/pyxis test dir"
+}
+
 @test "--container-mounts umount" {
     run_srun --container-mount-home --container-remap-root --container-image=ubuntu:20.04 findmnt /root
     run_srun --container-mount-home --container-remap-root --container-mounts umount:/root --container-image=ubuntu:20.04 bash -c '! findmnt /root'

@@ -837,7 +837,16 @@ static int enroot_create_start_config(char (*path)[PATH_MAX])
 
 		/* mount entries */
 		for (int i = 0; i < context.args->mounts_len; ++i) {
-			ret = fprintf(f, "\techo \"%s\"\n", context.args->mounts[i]);
+			char *esc_src = fstab_escape(context.args->mounts[i].source);
+			char *esc_dst = fstab_escape(context.args->mounts[i].target);
+			if (esc_src == NULL || esc_dst == NULL) {
+				free(esc_src);
+				free(esc_dst);
+				goto fail;
+			}
+			ret = fprintf(f, "\techo \"%s %s %s\"\n", esc_src, esc_dst, context.args->mounts[i].flags);
+			free(esc_src);
+			free(esc_dst);
 			if (ret < 0)
 				goto fail;
 		}

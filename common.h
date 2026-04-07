@@ -76,4 +76,6 @@ void array_free(char ***array, size_t *len);
 
 void memfd_print_log(int *log_fd, bool error, const char *tag);
 
+char *fstab_escape(const char *s);
+
 #endif /* COMMON_H_ */

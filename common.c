@@ -133,6 +133,58 @@ void array_free(char ***array, size_t *len)
 	*len = 0;
 }
 
+char *fstab_escape(const char *s)
+{
+	size_t len = 0;
+	char *out, *p;
+
+	for (const char *c = s; *c != '\0'; ++c) {
+		switch (*c) {
+		case ' ':
+		case '\t':
+		case '\n':
+		case '\\':
+			len += 4;
+			break;
+		default:
+			len += 1;
+			break;
+		}
+	}
+
+	out = malloc(len + 1);
+	if (out == NULL)
+		return (NULL);
+
+	p = out;
+	for (const char *c = s; *c != '\0'; ++c) {
+		switch (*c) {
+		case ' ':
+			memcpy(p, "\\040", 4);
+			p += 4;
+			break;
+		case '\t':
+			memcpy(p, "\\011", 4);
+			p += 4;
+			break;
+		case '\n':
+			memcpy(p, "\\012", 4);
+			p += 4;
+			break;
+		case '\\':
+			memcpy(p, "\\134", 4);
+			p += 4;
+			break;
+		default:
+			*p++ = *c;
+			break;
+		}
+	}
+	*p = '\0';
+
+	return (out);
+}
+
 void memfd_print_log(int *log_fd, bool error, const char *tag)
 {
 	int ret;
