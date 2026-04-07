@@ -260,11 +260,19 @@ static int spank_option_image(int val, const char *optarg, int remote)
 	return (0);
 }
 
+static bool mount_entry_equal(const struct mount_entry *a, const struct mount_entry *b)
+{
+	return (strcmp(a->source, b->source) == 0 &&
+		strcmp(a->target, b->target) == 0 &&
+		strcmp(a->flags, b->flags) == 0);
+}
+
 int add_mount(const char *source, const char *target, const char *flags)
 {
 	int ret;
-	char *entry = NULL;
 	const char *default_flags;
+	struct mount_entry entry = { 0 };
+	struct mount_entry *p;
 	int rv = -1;
 
 	if (strspn(source, "./") > 0) {
@@ -285,30 +293,59 @@ int add_mount(const char *source, const char *target, const char *flags)
 		goto fail;
 	}
 
-	if (flags != NULL)
-		ret = xasprintf(&entry, "%s %s %s,%s", source, target, default_flags, flags);
-	else
-		ret = xasprintf(&entry, "%s %s %s", source, target, default_flags);
-	if (ret < 0) {
-		slurm_error("pyxis: could not allocate memory");
+	entry.source = strdup(source);
+	if (entry.source == NULL)
 		goto fail;
+
+	entry.target = strdup(target);
+	if (entry.target == NULL)
+		goto fail;
+
+	if (flags != NULL) {
+		ret = xasprintf(&entry.flags, "%s,%s", default_flags, flags);
+		if (ret < 0)
+			goto fail;
+	} else {
+		entry.flags = strdup(default_flags);
+		if (entry.flags == NULL)
+			goto fail;
 	}
 
-	ret = array_add_unique(&pyxis_args.mounts, &pyxis_args.mounts_len, entry);
-	if (ret < 0)
-		goto fail;
+	for (size_t i = 0; i < pyxis_args.mounts_len; ++i) {
+		if (mount_entry_equal(&pyxis_args.mounts[i], &entry)) {
+			rv = 0;
+			goto fail;
+		}
+	}
 
-	rv = 0;
+	p = realloc(pyxis_args.mounts, sizeof(*p) * (pyxis_args.mounts_len + 1));
+	if (p == NULL)
+		goto fail;
+	pyxis_args.mounts = p;
+
+	pyxis_args.mounts[pyxis_args.mounts_len] = entry;
+	pyxis_args.mounts_len += 1;
+
+	return (0);
 
 fail:
-	free(entry);
+	free(entry.source);
+	free(entry.target);
+	free(entry.flags);
 
 	return (rv);
 }
 
 void remove_all_mounts(void)
 {
-	array_free(&pyxis_args.mounts, &pyxis_args.mounts_len);
+	for (size_t i = 0; i < pyxis_args.mounts_len; ++i) {
+		free(pyxis_args.mounts[i].source);
+		free(pyxis_args.mounts[i].target);
+		free(pyxis_args.mounts[i].flags);
+	}
+	free(pyxis_args.mounts);
+	pyxis_args.mounts = NULL;
+	pyxis_args.mounts_len = 0;
 }
 
 static int parse_mount_option(const char *option)

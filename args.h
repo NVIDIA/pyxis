@@ -10,9 +10,15 @@
 
 #include <slurm/spank.h>
 
+struct mount_entry {
+	char *source;
+	char *target;
+	char *flags;
+};
+
 struct plugin_args {
 	char *image;
-	char **mounts;
+	struct mount_entry *mounts;
 	size_t mounts_len;
 	char *workdir;
 	char *container_name;
