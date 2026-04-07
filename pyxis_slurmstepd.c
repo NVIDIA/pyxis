@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <linux/limits.h>
@@ -813,6 +813,29 @@ static int container_get_cwd(pid_t pid, struct container *container)
 	return (0);
 }
 
+static int validate_mount_sources(void)
+{
+	struct stat st;
+
+	for (size_t i = 0; i < context.args->mounts_len; ++i) {
+		const char *source = context.args->mounts[i].source;
+
+		if (source[0] != '/')
+			continue;
+
+		if (stat(source, &st) != 0) {
+			if (errno == ENOENT || errno == ENOTDIR) {
+				slurm_error("pyxis: --container-mounts: source path does not exist: %s", source);
+				return (-1);
+			}
+			/* For other errors, let enroot try the mount and report its own error. */
+			slurm_info("pyxis: --container-mounts: cannot stat source path %s: %s", source, strerror(errno));
+		}
+	}
+
+	return (0);
+}
+
 static int enroot_create_start_config(char (*path)[PATH_MAX])
 {
 	int ret;
@@ -821,6 +844,10 @@ static int enroot_create_start_config(char (*path)[PATH_MAX])
 	char template[] = "/tmp/.enroot_config_XXXXXX";
 	char *line = NULL;
 	int rv = -1;
+
+	ret = validate_mount_sources();
+	if (ret < 0)
+		goto fail;
 
 	fd = mkstemp(template);
 	if (fd < 0)

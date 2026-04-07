@@ -99,6 +99,20 @@ load ./common
     rm -rf "/tmp/pyxis test dir"
 }
 
+@test "--container-mounts non-existent source path" {
+    run_srun_unchecked --container-mounts=/nonexistent/path/foo:/mnt --container-image=ubuntu:18.04 true
+    [ "${status}" -ne 0 ]
+    grep -q 'source path does not exist' <<< "${output}"
+    grep -q '/nonexistent/path/foo' <<< "${output}"
+}
+
+@test "--container-mounts non-existent source with valid mount" {
+    run_srun_unchecked --container-mounts=/tmp:/mnt,/nonexistent/path:/mnt2 --container-image=ubuntu:18.04 true
+    [ "${status}" -ne 0 ]
+    grep -q 'source path does not exist' <<< "${output}"
+    grep -q '/nonexistent/path' <<< "${output}"
+}
+
 @test "--container-mounts umount" {
     run_srun --container-mount-home --container-remap-root --container-image=ubuntu:20.04 findmnt /root
     run_srun --container-mount-home --container-remap-root --container-mounts umount:/root --container-image=ubuntu:20.04 bash -c '! findmnt /root'
