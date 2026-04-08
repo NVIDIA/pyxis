@@ -68,6 +68,26 @@ static pid_t importer_exec(const char *importer_path, uid_t uid, gid_t gid,
 	}
 
 	if (pid == 0) {
+		/*
+		 * Move fds out of the standard range (0-2) if needed.
+		 */
+		if (stdout_fd >= 0 && stdout_fd <= 2) {
+			int new_fd = fcntl(stdout_fd, F_DUPFD_CLOEXEC, 3);
+			if (new_fd < 0)
+				_exit(EXIT_FAILURE);
+			if (stderr_fd == stdout_fd)
+				stderr_fd = new_fd;
+			close(stdout_fd);
+			stdout_fd = new_fd;
+		}
+		if (stderr_fd >= 0 && stderr_fd <= 2) {
+			int new_fd = fcntl(stderr_fd, F_DUPFD_CLOEXEC, 3);
+			if (new_fd < 0)
+				_exit(EXIT_FAILURE);
+			close(stderr_fd);
+			stderr_fd = new_fd;
+		}
+
 		null_fd = open("/dev/null", O_RDONLY);
 		if (null_fd < 0)
 			_exit(EXIT_FAILURE);
