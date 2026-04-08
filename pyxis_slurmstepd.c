@@ -1037,6 +1037,7 @@ static struct shared_memory *shm_init(void)
 {
 	struct shared_memory *shm = NULL;
 	pthread_mutexattr_t mutex_attr;
+	bool mutex_attr_init = false;
 	int ret;
 
 	shm = mmap(0, sizeof(*shm), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -1048,6 +1049,7 @@ static struct shared_memory *shm_init(void)
 	ret = pthread_mutexattr_init(&mutex_attr);
 	if (ret < 0)
 		goto fail;
+	mutex_attr_init = true;
 
 	ret = pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
 	if (ret < 0)
@@ -1061,6 +1063,8 @@ static struct shared_memory *shm_init(void)
 	if (ret < 0)
 		goto fail;
 
+	pthread_mutexattr_destroy(&mutex_attr);
+
 	shm->init_tasks = 0;
 	shm->started_tasks = 0;
 	shm->completed_tasks = 0;
@@ -1070,6 +1074,8 @@ static struct shared_memory *shm_init(void)
 	return shm;
 
 fail:
+	if (mutex_attr_init)
+		pthread_mutexattr_destroy(&mutex_attr);
 	if (shm != NULL)
 		munmap(shm, sizeof(*shm));
 	return (NULL);
