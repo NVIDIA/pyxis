@@ -622,6 +622,11 @@ static int spank_import_container_env(spank_t sp, pid_t pid)
 		value = proc_environ + i;
 		key = strsep(&value, "=");
 
+		if (value == NULL) {
+			i += strlen(key) + 1;
+			continue;
+		}
+
 		overwrite = 1;
 		if (array_contains(context.args->env_vars, context.args->env_vars_len, key))
 			overwrite = 0;
