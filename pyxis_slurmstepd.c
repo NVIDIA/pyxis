@@ -861,6 +861,7 @@ static int enroot_create_start_config(char (*path)[PATH_MAX])
 	f = fdopen(fd, "a+");
 	if (f == NULL)
 		goto fail;
+	fd = -1;
 
 	if (context.args->mounts_len > 0) {
 		ret = fprintf(f, "mounts() {\n");
