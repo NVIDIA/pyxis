@@ -1569,6 +1569,9 @@ int slurm_spank_task_exit(spank_t sp, int ac, char **av)
 	if (!context.enabled)
 		return (0);
 
+	if (context.shm == NULL)
+		return (0);
+
 	/* Last task to exit does the container export and/or container cleanup, if needed. */
 	if (atomic_fetch_add(&context.shm->completed_tasks, 1) == context.job.local_task_count - 1) {
 		ret = enroot_export();
