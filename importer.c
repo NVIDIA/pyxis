@@ -80,7 +80,7 @@ static pid_t importer_exec(const char *importer_path, uid_t uid, gid_t gid,
 			close(stdout_fd);
 			stdout_fd = new_fd;
 		}
-		if (stderr_fd >= 0 && stderr_fd <= 2) {
+		if (stderr_fd != stdout_fd && stderr_fd >= 0 && stderr_fd <= 2) {
 			int new_fd = fcntl(stderr_fd, F_DUPFD_CLOEXEC, 3);
 			if (new_fd < 0)
 				_exit(EXIT_FAILURE);
