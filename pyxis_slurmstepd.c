@@ -684,7 +684,7 @@ static int enroot_container_create(void)
 	if (context.container.use_enroot_load) {
 		ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "load", "--name", context.container.name, enroot_uri, NULL });
 		if (ret < 0) {
-			slurm_error("pyxis: failed to import docker image");
+			slurm_error("pyxis: failed to import docker image: %s", context.args->image);
 			enroot_print_log_ctx(true);
 			goto fail;
 		}
@@ -693,7 +693,7 @@ static int enroot_container_create(void)
 		if (context.container.use_enroot_import) {
 			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "import", "--output", context.container.squashfs_path, enroot_uri, NULL });
 			if (ret < 0) {
-				slurm_error("pyxis: failed to import docker image");
+				slurm_error("pyxis: failed to import docker image: %s", context.args->image);
 				enroot_print_log_ctx(true);
 				goto fail;
 			}
@@ -703,7 +703,7 @@ static int enroot_container_create(void)
 			ret = importer_exec_get(context.config.importer_path, context.job.uid, context.job.gid,
 						enroot_set_env, enroot_uri, &context.container.squashfs_path);
 			if (ret < 0) {
-				slurm_error("pyxis: failed to import docker image with importer: %s", context.config.importer_path);
+				slurm_error("pyxis: failed to import docker image: %s (importer: %s)", context.args->image, context.config.importer_path);
 				goto fail;
 			}
 			slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
@@ -714,7 +714,7 @@ static int enroot_container_create(void)
 
 			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, context.container.squashfs_path, NULL });
 			if (ret < 0) {
-				slurm_error("pyxis: failed to create container filesystem");
+				slurm_error("pyxis: failed to create container filesystem for image: %s", context.args->image);
 				enroot_print_log_ctx(true);
 				goto fail;
 			}

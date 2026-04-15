@@ -89,6 +89,7 @@ load ./common
     [ "${status}" -ne 0 ]
     attempts=$(grep -c 'failed to import docker image' <<< "${output}")
     [ "${attempts}" -eq 1 ]
+    grep -q 'failed to import docker image: thisimagedoesntexist' <<< "${output}"
 }
 
 @test "docker:// explicit import" {
