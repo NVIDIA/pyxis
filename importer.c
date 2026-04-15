@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -20,13 +20,9 @@
 static int importer_child_wait(pid_t pid, int *log_fd, const char *cmd)
 {
 	int status;
-	int ret;
 
-	do {
-		ret = waitpid(pid, &status, 0);
-	} while (ret < 0 && errno == EINTR);
-
-	if (ret < 0) {
+	status = child_wait_for_pid(pid);
+	if (status < 0) {
 		slurm_error("pyxis: could not wait for importer %s: %s", cmd, strerror(errno));
 		return (-1);
 	}

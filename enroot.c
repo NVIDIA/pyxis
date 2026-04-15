@@ -109,13 +109,9 @@ pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
 static int child_wait(pid_t pid)
 {
 	int status;
-	int ret;
 
-	do {
-		ret = waitpid(pid, &status, 0);
-	} while (ret < 0 && errno == EINTR);
-
-	if (ret < 0) {
+	status = child_wait_for_pid(pid);
+	if (status < 0) {
 		slurm_error("pyxis: could not wait for child %d: %s", pid, strerror(errno));
 		return (-1);
 	}

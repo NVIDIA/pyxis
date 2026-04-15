@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION. All rights reserved.
  */
 
 #include <stdarg.h>
@@ -8,6 +8,8 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 #include <slurm/spank.h>
 
@@ -217,4 +219,46 @@ void memfd_print_log(int *log_fd, bool error, const char *tag)
 
 	fclose(fp);
 	return;
+}
+
+static volatile sig_atomic_t got_sigterm;
+
+static void sigterm_handler(int sig)
+{
+	(void)sig;
+	got_sigterm = 1;
+}
+
+int child_wait_for_pid(pid_t pid)
+{
+	struct sigaction sa = { 0 }, old_sa;
+	int status;
+	int ret;
+
+	got_sigterm = 0;
+	sa.sa_handler = sigterm_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+
+	if (sigaction(SIGTERM, &sa, &old_sa) < 0)
+		return (-1);
+
+	do {
+		ret = waitpid(pid, &status, 0);
+	} while (ret < 0 && errno == EINTR && !got_sigterm);
+
+	sigaction(SIGTERM, &old_sa, NULL);
+
+	if (ret < 0 && got_sigterm) {
+		slurm_info("pyxis: received SIGTERM, forwarding to child %d", pid);
+		kill(pid, SIGTERM);
+		do {
+			ret = waitpid(pid, &status, 0);
+		} while (ret < 0 && errno == EINTR);
+	}
+
+	if (ret < 0)
+		return (-1);
+
+	return (status);
 }

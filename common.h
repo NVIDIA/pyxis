@@ -78,4 +78,6 @@ void memfd_print_log(int *log_fd, bool error, const char *tag);
 
 char *fstab_escape(const char *s);
 
+int child_wait_for_pid(pid_t pid);
+
 #endif /* COMMON_H_ */
