@@ -250,7 +250,7 @@ int child_wait_for_pid(pid_t pid)
 	sigaction(SIGTERM, &old_sa, NULL);
 
 	if (ret < 0 && got_sigterm) {
-		slurm_info("pyxis: received SIGTERM, forwarding to child %d", pid);
+		slurm_error("pyxis: received SIGTERM, forwarding to child %d", pid);
 		kill(pid, SIGTERM);
 		do {
 			ret = waitpid(pid, &status, 0);
