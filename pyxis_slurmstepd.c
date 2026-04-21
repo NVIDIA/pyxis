@@ -996,11 +996,15 @@ static pid_t enroot_container_start(void)
 
 	if (WIFEXITED(status) && (ret = WEXITSTATUS(status)) != 0) {
 		slurm_error("pyxis: container start failed with error code: %d", ret);
+		if (pyxis_execute_entrypoint())
+			slurm_error("pyxis: if the image has an unusual entrypoint, try using --no-container-entrypoint");
 		goto fail;
 	}
 
 	if (!WIFSTOPPED(status)) {
 		slurm_error("pyxis: container exited too soon");
+		if (pyxis_execute_entrypoint())
+			slurm_error("pyxis: if the image has an unusual entrypoint, try using --no-container-entrypoint");
 		goto fail;
 	}
 
@@ -1330,6 +1334,7 @@ static int enroot_start_once(struct container *container, struct shared_memory *
 
 	if (pthread_mutex_lock(&shm->mutex) == EOWNERDEAD) {
 		pthread_mutex_consistent(&shm->mutex);
+		slurm_error("pyxis: a previous task terminated unexpectedly during container setup");
 		shm->pid = -1;
 		shm->ns_pid = -1;
 		goto fail;
@@ -1350,8 +1355,10 @@ static int enroot_start_once(struct container *container, struct shared_memory *
 			shm->ns_pid = shm->pid;
 	}
 
-	if (shm->pid < 0 || shm->ns_pid < 0)
+	if (shm->pid < 0 || shm->ns_pid < 0) {
+		slurm_error("pyxis: container was not started successfully by another task");
 		goto fail;
+	}
 
 	rv = 0;
 
@@ -1402,12 +1409,8 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		goto fail;
 
 	ret = enroot_start_once(&context.container, context.shm);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't start container");
-		if (pyxis_execute_entrypoint())
-			slurm_error("pyxis: if the image has an unusual entrypoint, try using --no-container-entrypoint");
+	if (ret < 0)
 		goto fail;
-	}
 
 	ret = container_get_namespaces(context.shm->ns_pid, &context.container);
 	if (ret < 0) {
