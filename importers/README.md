@@ -35,6 +35,12 @@ The plugin must write the absolute path to the squashfs file on stdout. Any prog
 diagnostic output should be written to stderr. If the importer terminates with a non-zero exit code,
 pyxis will print the stderr log of the importer.
 
+When `use_squashfuse=1` is configured and the container is temporary with no
+`--container-save`, Pyxis may start directly from the returned squashfs path
+instead of first materializing it with `enroot create`. In that case, the returned
+path must remain valid until the `release` operation is called during task
+cleanup.
+
 **Environment:**
 The plugin runs with the same environment variables available to enroot, plus:
 * `PYXIS_RUNTIME_PATH`: The `runtime_path` configured for pyxis
@@ -51,8 +57,13 @@ importer release
 ```
 
 **Important:** To handle cases where the job step receives `SIGKILL`. The `release` operation is often called **twice** during the lifecycle of a job:
-1. Once after the container is created
+1. Once after the squashfs has been materialized with `enroot create`
 2. Once during task cleanup
+
+When Pyxis uses direct squashfuse startup, the squashfs is not materialized with
+`enroot create`, so the first call is skipped and `release` is called during task
+cleanup. Importers that return per-job temporary squashfs files should keep them
+available for the container lifetime in this mode.
 
 Implementations must be idempotent and handle being called multiple times safely. The plugin should not fail if resources have already been cleaned up.
 

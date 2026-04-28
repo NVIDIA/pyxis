@@ -117,6 +117,13 @@ static bool pyxis_execute_entrypoint(void)
 	return context.args->entrypoint == 1 || (context.args->entrypoint == -1 && context.config.execute_entrypoint == true);
 }
 
+static bool pyxis_can_direct_start_squashfs(void)
+{
+	return context.config.use_squashfuse &&
+	       context.container.temporary_rootfs &&
+	       context.args->container_save == NULL;
+}
+
 int pyxis_slurmstepd_init(spank_t sp, int ac, char **av)
 {
 	int ret;
@@ -390,12 +397,31 @@ static int enroot_import_job_env(char **env)
 	return (0);
 }
 
+static int setenv_unsigned(const char *name, unsigned int value)
+{
+	int ret;
+	char buf[11];
+
+	ret = snprintf(buf, sizeof(buf), "%u", value);
+	if (ret < 0 || ret >= sizeof(buf))
+		return (-1);
+
+	return setenv(name, buf, 1);
+}
+
 static int enroot_set_env(void)
 {
 	if (slurm_clear_env() < 0)
 		return (-1);
 
 	if (enroot_import_job_env(context.job.environ) < 0)
+		return (-1);
+
+	/* Use SPANK job credentials instead of task cleanup environment values. */
+	if (setenv_unsigned("SLURM_JOB_UID", context.job.uid) < 0)
+		return (-1);
+
+	if (setenv_unsigned("SLURM_JOB_GID", context.job.gid) < 0)
 		return (-1);
 
 	if (context.args->mount_home == 0) {
@@ -671,7 +697,7 @@ static int enroot_container_create(void)
 	struct timespec start_time, end_time;
 	int rv = -1;
 
-	if (context.container.use_squashfuse) {
+	if (context.container.use_squashfuse && !context.container.use_importer) {
 		slurm_info("pyxis: skipping container creation (squashfuse enabled)");
 		return 0;
 	}
@@ -725,9 +751,13 @@ static int enroot_container_create(void)
 				goto fail;
 			}
 			slurm_spank_log("pyxis: imported docker image: %s", context.args->image);
+
+			if (context.container.use_squashfuse) {
+				slurm_info("pyxis: using importer squashfs directly: %s", context.container.squashfs_path);
+			}
 		}
 
-		if (context.container.squashfs_path != NULL) {
+		if (context.container.squashfs_path != NULL && !context.container.use_squashfuse) {
 			slurm_info("pyxis: creating container filesystem: %s", context.container.name);
 
 			ret = enroot_exec_wait_ctx((char *const[]){ "enroot", "create", "--name", context.container.name, context.container.squashfs_path, NULL });
@@ -755,12 +785,23 @@ fail:
 	}
 
 	if (context.container.use_importer) {
-		ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
-					    enroot_set_env);
-		if (ret < 0)
-			slurm_info("pyxis: could not call importer release");
-		free(context.container.squashfs_path);
-		context.container.squashfs_path = NULL;
+		bool release_importer = false;
+
+		/* Direct squashfuse startup needs the importer path until task cleanup. */
+		if (rv < 0) {
+			release_importer = true;
+		} else if (!context.container.use_squashfuse) {
+			release_importer = true;
+		}
+
+		if (release_importer) {
+			ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
+						    enroot_set_env);
+			if (ret < 0)
+				slurm_info("pyxis: could not call importer release");
+			free(context.container.squashfs_path);
+			context.container.squashfs_path = NULL;
+		}
 	}
 
 	return (rv);
@@ -1298,15 +1339,16 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 				goto fail;
 
 			/* Check if we should mount the squashfs directly instead of creating a container */
-			if (context.config.use_squashfuse &&
-			    context.container.temporary_rootfs &&
-			    context.args->container_save == NULL) {
+			if (pyxis_can_direct_start_squashfs()) {
 				context.container.use_squashfuse = true;
 			}
 		} else {
 			/* Determine how the image is going to be loaded */
 			if (context.config.importer_path[0] != '\0') {
 				context.container.use_importer = true;
+				/* Record direct squashfuse mode before task contexts fork. */
+				if (pyxis_can_direct_start_squashfs())
+					context.container.use_squashfuse = true;
 			} else {
 				/* No importer configured, use the builtin enroot import/load path */
 				context.container.use_enroot_load = context.config.use_enroot_load &&
@@ -1442,6 +1484,14 @@ static int enroot_start_once(struct container *container, struct shared_memory *
 				goto fail;
 		}
 		shm->pid = enroot_container_start();
+		if (shm->pid < 0 && container->use_importer && container->use_squashfuse) {
+			ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
+						    enroot_set_env);
+			if (ret < 0)
+				slurm_info("pyxis: could not call importer release");
+			free(container->squashfs_path);
+			container->squashfs_path = NULL;
+		}
 
 		if (!container->reuse_ns)
 			shm->ns_pid = shm->pid;
