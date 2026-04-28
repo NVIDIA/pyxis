@@ -23,6 +23,9 @@ static struct plugin_args pyxis_args = {
 	.entrypoint = -1,
 	.entrypoint_log = -1,
 	.writable   = -1,
+	.unshare_net = -1,
+	.unshare_ipc = -1,
+	.unshare_uts = -1,
 	.env_vars = NULL,
 	.env_vars_len = 0,
 };
@@ -37,6 +40,7 @@ static int spank_option_container_remap_root(int val, const char *optarg, int re
 static int spank_option_container_entrypoint(int val, const char *optarg, int remote);
 static int spank_option_container_entrypoint_log(int val, const char *optarg, int remote);
 static int spank_option_container_writable(int val, const char *optarg, int remote);
+static int spank_option_container_unshare(int val, const char *optarg, int remote);
 static int spank_option_container_env(int val, const char *optarg, int remote);
 
 struct spank_option spank_opts[] =
@@ -147,6 +151,13 @@ struct spank_option spank_opts[] =
 		"the variables specified with this flag are preserved from the host and set before the entrypoint runs",
 		1, 0, spank_option_container_env
 	},
+	{
+		"container-unshare",
+		"NS[,NS...]",
+		"[pyxis] create new namespaces for the container. "
+		"Supported: net, ipc, uts.",
+		1, 1, spank_option_container_unshare
+	},
 	SPANK_OPTIONS_TABLE_END
 };
 
@@ -234,6 +245,10 @@ void pyxis_args_check_environment_variables(spank_t sp)
 	env_val = get_env_var(sp, "PYXIS_CONTAINER_ENV", buf, sizeof(buf));
 	if (env_val != NULL && pyxis_args.env_vars_len == 0)
 		spank_option_container_env(0, env_val, 0);
+
+	env_val = get_env_var(sp, "PYXIS_CONTAINER_UNSHARE", buf, sizeof(buf));
+	if (env_val != NULL && pyxis_args.unshare_net == -1 && pyxis_args.unshare_ipc == -1 && pyxis_args.unshare_uts == -1)
+		spank_option_container_unshare(1, env_val, 0);
 }
 
 static int spank_option_image(int val, const char *optarg, int remote)
@@ -611,6 +626,48 @@ static int spank_option_container_writable(int val, const char *optarg, int remo
 	return (0);
 }
 
+static int spank_option_container_unshare(int val, const char *optarg, int remote)
+{
+	int rv = -1;
+	char *optarg_dup = NULL;
+	char *args, *arg;
+
+	if (optarg == NULL || *optarg == '\0') {
+		slurm_error("pyxis: --container-unshare: argument required");
+		return (-1);
+	}
+
+	optarg_dup = strdup(optarg);
+	if (optarg_dup == NULL) {
+		slurm_error("pyxis: could not allocate memory");
+		return (-1);
+	}
+
+	args = optarg_dup;
+	while ((arg = strsep(&args, ",")) != NULL) {
+		if (*arg == '\0') {
+			slurm_error("pyxis: --container-unshare: empty namespace argument");
+			goto fail;
+		}
+		if (strcmp(arg, "net") == 0) {
+			pyxis_args.unshare_net = 1;
+		} else if (strcmp(arg, "ipc") == 0) {
+			pyxis_args.unshare_ipc = 1;
+		} else if (strcmp(arg, "uts") == 0) {
+			pyxis_args.unshare_uts = 1;
+		} else {
+			slurm_error("pyxis: --container-unshare: unknown namespace '%s'", arg);
+			goto fail;
+		}
+	}
+
+	rv = 0;
+
+fail:
+	free(optarg_dup);
+	return (rv);
+}
+
 static int spank_option_container_env(int val, const char *optarg, int remote)
 {
 	int ret;
@@ -701,4 +758,3 @@ void pyxis_args_free(void)
 	free(pyxis_args.container_save);
 	array_free(&pyxis_args.env_vars, &pyxis_args.env_vars_len);
 }
-

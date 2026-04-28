@@ -49,6 +49,9 @@ struct container {
 	int userns_fd;
 	int mntns_fd;
 	int cgroupns_fd;
+	int netns_fd;
+	int ipcns_fd;
+	int utsns_fd;
 };
 
 struct job_info {
@@ -104,7 +107,7 @@ static struct plugin_context context = {
 		.reuse_rootfs = false, .reuse_ns = false, .temporary_rootfs = false,
 		.use_enroot_import = false, .use_enroot_load = false,
 		.use_importer = false, .use_squashfuse = false,
-		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1,
+		.userns_fd = -1, .mntns_fd = -1, .cgroupns_fd = -1, .netns_fd = -1, .ipcns_fd = -1, .utsns_fd = -1,
 	},
 	.user_init_rv = 0,
 };
@@ -423,6 +426,21 @@ static int enroot_set_env(void)
 			return (-1);
 	} else {
 		/* If writable/readonly was not set by the user, we rely on the setting specified in the enroot config. */
+	}
+
+	if (context.args->unshare_net == 1) {
+		if (setenv("ENROOT_UNSHARE_NET", "y", 1) < 0)
+			return (-1);
+	}
+
+	if (context.args->unshare_ipc == 1) {
+		if (setenv("ENROOT_UNSHARE_IPC", "y", 1) < 0)
+			return (-1);
+	}
+
+	if (context.args->unshare_uts == 1) {
+		if (setenv("ENROOT_UNSHARE_UTS", "y", 1) < 0)
+			return (-1);
 	}
 
 	if (setenv("PYXIS_RUNTIME_PATH", context.config.runtime_path, 1) < 0)
@@ -748,6 +766,53 @@ fail:
 	return (rv);
 }
 
+static int container_resolve_ns(pid_t pid, const char *name, int *fd_out)
+{
+	char target_path[64];
+	char self_path[64];
+	struct stat self_stat, target_stat;
+	int target_fd;
+	int ret;
+
+	*fd_out = -1;
+
+	ret = snprintf(target_path, sizeof(target_path), "/proc/%d/ns/%s", pid, name);
+	if (ret < 0 || (size_t)ret >= sizeof(target_path))
+		return (-1);
+
+	target_fd = open(target_path, O_RDONLY | O_CLOEXEC);
+	if (target_fd < 0) {
+		slurm_error("pyxis: unable to open %s namespace file: %s", name, strerror(errno));
+		return (-1);
+	}
+
+	ret = snprintf(self_path, sizeof(self_path), "/proc/self/ns/%s", name);
+	if (ret < 0 || (size_t)ret >= sizeof(self_path))
+		goto fail;
+
+	if (stat(self_path, &self_stat) < 0) {
+		slurm_error("pyxis: unable to stat self %s namespace: %s", name, strerror(errno));
+		goto fail;
+	}
+	if (fstat(target_fd, &target_stat) < 0) {
+		slurm_error("pyxis: unable to fstat container %s namespace: %s", name, strerror(errno));
+		goto fail;
+	}
+
+	if (self_stat.st_dev == target_stat.st_dev && self_stat.st_ino == target_stat.st_ino) {
+		/* Same namespace */
+		xclose(target_fd);
+		return (0);
+	}
+
+	*fd_out = target_fd;
+	return (0);
+
+fail:
+	xclose(target_fd);
+	return (-1);
+}
+
 static int container_get_namespaces(pid_t pid, struct container *container)
 {
 	int ret;
@@ -782,6 +847,27 @@ static int container_get_namespaces(pid_t pid, struct container *container)
 	/* Skip cgroup namespace if not supported */
 	if (container->cgroupns_fd < 0 && errno != ENOENT) {
 		slurm_error("pyxis: unable to open cgroup namespace file: %s", strerror(errno));
+		goto fail;
+	}
+
+	if (container_resolve_ns(pid, "net", &container->netns_fd) < 0)
+		goto fail;
+	if (context.args->unshare_net == 1 && container->netns_fd < 0) {
+		slurm_error("pyxis: error: --container-unshare=net requested but the container is not in a separate network namespace");
+		goto fail;
+	}
+
+	if (container_resolve_ns(pid, "ipc", &container->ipcns_fd) < 0)
+		goto fail;
+	if (context.args->unshare_ipc == 1 && container->ipcns_fd < 0) {
+		slurm_error("pyxis: error: --container-unshare=ipc requested but the container is not in a separate IPC namespace");
+		goto fail;
+	}
+
+	if (container_resolve_ns(pid, "uts", &container->utsns_fd) < 0)
+		goto fail;
+	if (context.args->unshare_uts == 1 && container->utsns_fd < 0) {
+		slurm_error("pyxis: error: --container-unshare=uts requested but the container is not in a separate UTS namespace");
 		goto fail;
 	}
 
@@ -1464,6 +1550,30 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 		goto fail;
 	}
 
+	if (context.container.ipcns_fd >= 0) {
+		ret = setns(context.container.ipcns_fd, CLONE_NEWIPC);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't join IPC namespace: %s", strerror(errno));
+			goto fail;
+		}
+	}
+
+	if (context.container.utsns_fd >= 0) {
+		ret = setns(context.container.utsns_fd, CLONE_NEWUTS);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't join UTS namespace: %s", strerror(errno));
+			goto fail;
+		}
+	}
+
+	if (context.container.netns_fd >= 0) {
+		ret = setns(context.container.netns_fd, CLONE_NEWNET);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't join network namespace: %s", strerror(errno));
+			goto fail;
+		}
+	}
+
 	/* No need to chdir(root) + chroot(".") since enroot does a pivot_root. */
 	if (context.args->workdir != NULL) {
 		ret = chdir(context.args->workdir);
@@ -1620,6 +1730,9 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	xclose(context.container.userns_fd);
 	xclose(context.container.mntns_fd);
 	xclose(context.container.cgroupns_fd);
+	xclose(context.container.netns_fd);
+	xclose(context.container.ipcns_fd);
+	xclose(context.container.utsns_fd);
 	free(context.container.cwd_path);
 	xclose(context.log_fd);
 

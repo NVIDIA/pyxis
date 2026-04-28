@@ -103,6 +103,10 @@ $ srun --help
                               but their existing values in the image take precedence;
                               the variables specified with this flag are preserved
                               from the host and set before the entrypoint runs
+
+      --container-unshare=NS[,NS...]
+                              [pyxis] create new namespaces for the container.
+                              Supported: net, ipc, uts.
 ```
 
 ## Examples

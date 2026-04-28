@@ -29,6 +29,9 @@ struct plugin_args {
 	int entrypoint;
 	int entrypoint_log;
 	int writable;
+	int unshare_net;
+	int unshare_ipc;
+	int unshare_uts;
 	char **env_vars;
 	size_t env_vars_len;
 };
