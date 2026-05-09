@@ -43,6 +43,11 @@ load ./common
                apt-get install -y --no-install-recommends install-info'
 }
 
+@test "Docker Hub docker.io/ubuntu:24.04" {
+    run_srun --container-image=docker.io/ubuntu:24.04 grep 'Ubuntu 24.04' /etc/os-release
+    run_srun --container-image=docker.io#ubuntu:24.04 grep 'Ubuntu 24.04' /etc/os-release
+}
+
 @test "Docker Hub centos:5" {
     run_srun --container-image=centos:5 grep 'CentOS release 5.11 (Final)' /etc/redhat-release
 }
