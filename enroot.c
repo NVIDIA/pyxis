@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -15,8 +16,8 @@
 #include "enroot.h"
 #include "common.h"
 
-pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
-		  child_cb callback, char *const argv[])
+pid_t enroot_exec(uid_t uid, gid_t gid, int ngids, const gid_t *gids,
+		  int log_fd, child_cb callback, char *const argv[])
 {
 	int ret;
 	int null_fd = -1;
@@ -84,6 +85,15 @@ pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
 			close(oom_score_fd);
 		}
 
+		if (close_extra_fds() < 0)
+			_exit(EXIT_FAILURE);
+
+		if (geteuid() == 0) {
+			ret = setgroups(ngids, gids);
+			if (ret < 0)
+				_exit(EXIT_FAILURE);
+		}
+
 		ret = setregid(gid, gid);
 		if (ret < 0)
 			_exit(EXIT_FAILURE);
@@ -129,13 +139,13 @@ static int child_wait(pid_t pid)
 	return (0);
 }
 
-int enroot_exec_wait(uid_t uid, gid_t gid, int log_fd,
-		     child_cb callback, char *const argv[])
+int enroot_exec_wait(uid_t uid, gid_t gid, int ngids, const gid_t *gids,
+		     int log_fd, child_cb callback, char *const argv[])
 {
 	int ret;
 	pid_t child;
 
-	child = enroot_exec(uid, gid, log_fd, callback, argv);
+	child = enroot_exec(uid, gid, ngids, gids, log_fd, callback, argv);
 	if (child < 0)
 		return (-1);
 
@@ -146,7 +156,7 @@ int enroot_exec_wait(uid_t uid, gid_t gid, int log_fd,
 	return (0);
 }
 
-FILE *enroot_exec_output(uid_t uid, gid_t gid,
+FILE *enroot_exec_output(uid_t uid, gid_t gid, int ngids, const gid_t *gids,
 			 child_cb callback, char *const argv[])
 {
 	int ret;
@@ -159,7 +169,7 @@ FILE *enroot_exec_output(uid_t uid, gid_t gid,
 		return (NULL);
 	}
 
-	ret = enroot_exec_wait(uid, gid, log_fd, callback, argv);
+	ret = enroot_exec_wait(uid, gid, ngids, gids, log_fd, callback, argv);
 	if (ret < 0) {
 		slurm_error("pyxis: couldn't execute enroot command");
 		memfd_print_log(&log_fd, true, "enroot");

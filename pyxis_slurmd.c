@@ -64,7 +64,7 @@ static int pyxis_container_remove(uid_t uid, gid_t gid, const char *name)
 		goto fail;
 	}
 
-	ret = enroot_exec_wait(uid, gid, log_fd, NULL,
+	ret = enroot_exec_wait(uid, gid, 0, NULL, log_fd, NULL,
 			       (char *const[]){ "enroot", "remove", "-f", (char *)name, NULL });
 	if (ret < 0) {
 		slurm_error("pyxis: epilog: failed to remove container %s", name);
@@ -99,7 +99,7 @@ static int pyxis_container_cleanup(uid_t uid, gid_t gid, uint32_t jobid)
 	int rv = 0;
 	int leftover = 0;
 
-	fp = enroot_exec_output(uid, gid, NULL,
+	fp = enroot_exec_output(uid, gid, 0, NULL, NULL,
 				(char *const[]){ "enroot", "list", NULL });
 	if (fp == NULL) {
 		slurm_error("pyxis: epilog: couldn't get list of existing containers");
@@ -124,7 +124,7 @@ static int pyxis_container_cleanup(uid_t uid, gid_t gid, uint32_t jobid)
 	if (rv < 0) {
 		slurm_verbose("pyxis: epilog: checking for leftover containers");
 
-		fp = enroot_exec_output(uid, gid, NULL,
+		fp = enroot_exec_output(uid, gid, 0, NULL, NULL,
 					(char *const[]){ "enroot", "list", NULL });
 		if (fp == NULL) {
 			slurm_error("pyxis: epilog: couldn't get list of existing containers");

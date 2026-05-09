@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 
 #include <slurm/spank.h>
@@ -261,4 +262,15 @@ int child_wait_for_pid(pid_t pid)
 		return (-1);
 
 	return (status);
+}
+
+int close_extra_fds(void)
+{
+	if (syscall(__NR_close_range, (unsigned int)(STDERR_FILENO + 1), ~0U, 0) == 0)
+		return (0);
+
+	if (errno == ENOSYS)
+		return (0);
+
+	return (-1);
 }

@@ -10,9 +10,11 @@
 typedef int (*child_cb)(void);
 
 int importer_exec_get(const char *importer_path, uid_t uid, gid_t gid,
+		      int ngids, const gid_t *gids,
 		      child_cb callback, const char *image_uri, char **squashfs_path);
 
 int importer_exec_release(const char *importer_path, uid_t uid, gid_t gid,
+			  int ngids, const gid_t *gids,
 			  child_cb callback);
 
 #endif /* IMPORTER_H_ */

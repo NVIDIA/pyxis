@@ -11,13 +11,13 @@
 
 typedef int (*child_cb)(void);
 
-pid_t enroot_exec(uid_t uid, gid_t gid, int log_fd,
-		  child_cb callback, char *const argv[]);
+pid_t enroot_exec(uid_t uid, gid_t gid, int ngids, const gid_t *gids,
+		  int log_fd, child_cb callback, char *const argv[]);
 
-int enroot_exec_wait(uid_t uid, gid_t gid, int log_fd,
-		     child_cb callback, char *const argv[]);
+int enroot_exec_wait(uid_t uid, gid_t gid, int ngids, const gid_t *gids,
+		     int log_fd, child_cb callback, char *const argv[]);
 
-FILE *enroot_exec_output(uid_t uid, gid_t gid,
+FILE *enroot_exec_output(uid_t uid, gid_t gid, int ngids, const gid_t *gids,
 			 child_cb callback, char *const argv[]);
 
 #endif /* ENROOT_H_ */

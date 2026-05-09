@@ -57,6 +57,8 @@ struct container {
 struct job_info {
 	uid_t uid;
 	gid_t gid;
+	int ngids;
+	gid_t *gids;
 	bool privileged;
 	uint32_t jobid;
 	uint32_t stepid;
@@ -97,7 +99,7 @@ static struct plugin_context context = {
 	.config = { .runtime_path = { 0 } },
 	.args = NULL,
 	.job = {
-		.uid = -1, .gid = -1, .privileged = false,
+		.uid = -1, .gid = -1, .ngids = 0, .gids = NULL, .privileged = false,
 		.jobid = 0, .stepid = 0,
 		.local_task_count = 0, .total_task_count = 0,
 		.environ = NULL, .cwd = { 0 }
@@ -147,6 +149,8 @@ static int job_get_info(spank_t sp, struct job_info *job)
 {
 	spank_err_t rc;
 	char allow_superuser[] = "false";
+	gid_t *spank_gids = NULL;
+	int spank_ngids = 0;
 	int rv = -1;
 
 	rc = spank_get_item(sp, S_JOB_UID, &job->uid);
@@ -159,6 +163,21 @@ static int job_get_info(spank_t sp, struct job_info *job)
 	if (rc != ESPANK_SUCCESS) {
 		slurm_error("pyxis: couldn't get job gid: %s", spank_strerror(rc));
 		goto fail;
+	}
+
+	rc = spank_get_item(sp, S_JOB_SUPPLEMENTARY_GIDS, &spank_gids, &spank_ngids);
+	if (rc != ESPANK_SUCCESS) {
+		slurm_error("pyxis: couldn't get job supplementary gids: %s", spank_strerror(rc));
+		goto fail;
+	}
+	if (spank_ngids > 0 && spank_gids != NULL) {
+		job->gids = malloc(spank_ngids * sizeof(*job->gids));
+		if (job->gids == NULL) {
+			slurm_error("pyxis: couldn't allocate supplementary gids");
+			goto fail;
+		}
+		memcpy(job->gids, spank_gids, spank_ngids * sizeof(*job->gids));
+		job->ngids = spank_ngids;
 	}
 
 	rc = spank_get_item(sp, S_JOB_ID, &job->jobid);
@@ -480,17 +499,20 @@ static int enroot_set_env(void)
 
 static pid_t enroot_exec_ctx(char *const argv[])
 {
-	return enroot_exec(context.job.uid, context.job.gid, enroot_new_log(), enroot_set_env, argv);
+	return enroot_exec(context.job.uid, context.job.gid, context.job.ngids, context.job.gids,
+			   enroot_new_log(), enroot_set_env, argv);
 }
 
 static int enroot_exec_wait_ctx(char *const argv[])
 {
-	return enroot_exec_wait(context.job.uid, context.job.gid, enroot_new_log(), enroot_set_env, argv);
+	return enroot_exec_wait(context.job.uid, context.job.gid, context.job.ngids, context.job.gids,
+				enroot_new_log(), enroot_set_env, argv);
 }
 
 static FILE *enroot_exec_output_ctx(char *const argv[])
 {
-	return enroot_exec_output(context.job.uid, context.job.gid, enroot_set_env, argv);
+	return enroot_exec_output(context.job.uid, context.job.gid, context.job.ngids, context.job.gids,
+				  enroot_set_env, argv);
 }
 
 static void enroot_print_log_ctx(bool error)
@@ -745,6 +767,7 @@ static int enroot_container_create(void)
 		} else if (context.container.use_importer) {
 			/* Use external importer to get squashfs file */
 			ret = importer_exec_get(context.config.importer_path, context.job.uid, context.job.gid,
+						context.job.ngids, context.job.gids,
 						enroot_set_env, enroot_uri, &context.container.squashfs_path);
 			if (ret < 0) {
 				slurm_error("pyxis: failed to import docker image: %s (importer: %s)", context.args->image, context.config.importer_path);
@@ -796,6 +819,7 @@ fail:
 
 		if (release_importer) {
 			ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
+						    context.job.ngids, context.job.gids,
 						    enroot_set_env);
 			if (ret < 0)
 				slurm_info("pyxis: could not call importer release");
@@ -1486,6 +1510,7 @@ static int enroot_start_once(struct container *container, struct shared_memory *
 		shm->pid = enroot_container_start();
 		if (shm->pid < 0 && container->use_importer && container->use_squashfuse) {
 			ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
+						    context.job.ngids, context.job.gids,
 						    enroot_set_env);
 			if (ret < 0)
 				slurm_info("pyxis: could not call importer release");
@@ -1717,6 +1742,7 @@ static int enroot_cleanup(void)
 
 	if (context.container.use_importer) {
 		ret = importer_exec_release(context.config.importer_path, context.job.uid, context.job.gid,
+					    context.job.ngids, context.job.gids,
 					    enroot_set_env);
 		if (ret < 0) {
 			slurm_info("pyxis: failed to call importer release");
@@ -1770,6 +1796,8 @@ int pyxis_slurmstepd_exit(spank_t sp, int ac, char **av)
 	free(context.container.name);
 	free(context.container.squashfs_path);
 	free(context.container.save_path);
+
+	free(context.job.gids);
 
 	if (context.job.environ != NULL) {
 		for (int i = 0; context.job.environ[i] != NULL; ++i)

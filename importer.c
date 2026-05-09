@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +44,7 @@ static int importer_child_wait(pid_t pid, int *log_fd, const char *cmd)
 }
 
 static pid_t importer_exec(const char *importer_path, uid_t uid, gid_t gid,
+			   int ngids, const gid_t *gids,
 			   int stdout_fd, int stderr_fd, child_cb callback, char *const argv[])
 {
 	int ret;
@@ -106,6 +108,15 @@ static pid_t importer_exec(const char *importer_path, uid_t uid, gid_t gid,
 			close(oom_score_fd);
 		}
 
+		if (close_extra_fds() < 0)
+			_exit(EXIT_FAILURE);
+
+		if (geteuid() == 0) {
+			ret = setgroups(ngids, gids);
+			if (ret < 0)
+				_exit(EXIT_FAILURE);
+		}
+
 		ret = setregid(gid, gid);
 		if (ret < 0)
 			_exit(EXIT_FAILURE);
@@ -129,6 +140,7 @@ static pid_t importer_exec(const char *importer_path, uid_t uid, gid_t gid,
 
 
 int importer_exec_get(const char *importer_path, uid_t uid, gid_t gid,
+		      int ngids, const gid_t *gids,
 		      child_cb callback, const char *image_uri, char **squashfs_path)
 {
 	char *argv[4];
@@ -156,7 +168,7 @@ int importer_exec_get(const char *importer_path, uid_t uid, gid_t gid,
 	argv[2] = (char *)image_uri;
 	argv[3] = NULL;
 
-	child = importer_exec(importer_path, uid, gid, pipe_fds[1], log_fd, callback, argv);
+	child = importer_exec(importer_path, uid, gid, ngids, gids, pipe_fds[1], log_fd, callback, argv);
 	xclose(pipe_fds[1]);  /* Close write end in parent */
 
 	if (child < 0) {
@@ -205,6 +217,7 @@ int importer_exec_get(const char *importer_path, uid_t uid, gid_t gid,
 }
 
 int importer_exec_release(const char *importer_path, uid_t uid, gid_t gid,
+			  int ngids, const gid_t *gids,
 			  child_cb callback)
 {
 	int ret;
@@ -222,7 +235,7 @@ int importer_exec_release(const char *importer_path, uid_t uid, gid_t gid,
 	argv[1] = "release";
 	argv[2] = NULL;
 
-	child = importer_exec(importer_path, uid, gid, log_fd, log_fd, callback, argv);
+	child = importer_exec(importer_path, uid, gid, ngids, gids, log_fd, log_fd, callback, argv);
 	if (child < 0) {
 		xclose(log_fd);
 		return (-1);

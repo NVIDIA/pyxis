@@ -32,6 +32,10 @@ int xasprintf(char **strp, const char *fmt, ...);
 # endif /* !defined(__NR_memfd_create) */
 #endif /* defined(__x86_64__) */
 
+#if !defined(__NR_close_range)
+# define __NR_close_range 436
+#endif /* !defined(__NR_close_range) */
+
 #ifndef CLONE_NEWCGROUP
 # define CLONE_NEWCGROUP 0x02000000
 #endif
@@ -79,5 +83,7 @@ void memfd_print_log(int *log_fd, bool error, const char *tag);
 char *fstab_escape(const char *s);
 
 int child_wait_for_pid(pid_t pid);
+
+int close_extra_fds(void);
 
 #endif /* COMMON_H_ */
