@@ -5,6 +5,13 @@
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
+# Reliably define DEB_HOST_MULTIARCH (and friends) so the plugin install path and
+# the generated pyxis.conf are derived from the host architecture, even when the
+# build driver does not export it into the environment (e.g. cross builds, or
+# invoking debian/rules directly). Without this, $(DEB_HOST_MULTIARCH) can expand
+# empty and the plugin lands in /usr/lib/slurm with a matching wrong conf path.
+include /usr/share/dpkg/architecture.mk
+
 %:
 ifdef DO_RELEASE
 	sed -i "s/UNRELEASED/$(shell lsb_release -c -s)/" $(CURDIR)/debian/changelog
