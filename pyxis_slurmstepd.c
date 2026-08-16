@@ -1329,6 +1329,17 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 
 		if (pid > 0) {
 			slurm_info("pyxis: reusing existing container namespaces");
+
+			/*
+			 * Pin the namespaces now: an open fd on /proc/<pid>/ns/<type> keeps
+			 * them alive even after this pid exits.
+			 */
+			ret = container_get_namespaces(pid, &context.container);
+			if (ret < 0) {
+				slurm_error("pyxis: couldn't get namespaces of container \"%s\"", container_name);
+				goto fail;
+			}
+
 			context.shm->ns_pid = pid;
 			context.container.reuse_ns = true;
 			context.container.reuse_rootfs = true;
@@ -1579,10 +1590,13 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 	if (ret < 0)
 		goto fail;
 
-	ret = container_get_namespaces(context.shm->ns_pid, &context.container);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't get container namespaces");
-		goto fail;
+	/* Already pinned and inherited across fork(2) when attaching (see user_init()). */
+	if (!context.container.reuse_ns) {
+		ret = container_get_namespaces(context.shm->ns_pid, &context.container);
+		if (ret < 0) {
+			slurm_error("pyxis: couldn't get container namespaces");
+			goto fail;
+		}
 	}
 
 	ret = container_get_cwd(context.shm->pid, &context.container);
