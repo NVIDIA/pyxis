@@ -46,9 +46,10 @@ EOF
 chmod +x %{_builddir}/find-requires
 
 %build
-%make_build prefix=%{_prefix}
+# Slurm may be installed outside the default search paths (e.g. _prefix=/opt/slurm)
+CPPFLAGS="-I%{_includedir}" %make_build prefix=%{_prefix}
 # Dummy file to get a dependency on libslurm
-%{__cc} -lslurm -o %{_builddir}/libslurm_dummy %{_builddir}/libslurm_dummy.c
+%{__cc} -o %{_builddir}/libslurm_dummy %{_builddir}/libslurm_dummy.c -L%{_libdir} -Wl,--no-as-needed -lslurm
 
 %install
 %make_install prefix=%{_prefix} libdir=%{_libdir} DESTDIR=%{buildroot}
