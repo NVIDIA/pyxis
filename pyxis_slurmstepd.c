@@ -1559,6 +1559,30 @@ fail:
 	return (rv);
 }
 
+/*
+ * Join a namespace if the fd is valid.
+ *
+ * @param fd       Namespace file descriptor. If < 0, the call is skipped (optional namespace).
+ * @param nstype   CLONE_NEW* flag for the namespace type.
+ * @param name     Human-readable name for error messages (e.g., "user", "mount", "network").
+ * @return         0 on success or skipped, -1 on error (errno is set by setns).
+ */
+static int join_namespace(int fd, int nstype, const char *name)
+{
+	int ret;
+
+	if (fd < 0)
+		return (0);
+
+	ret = setns(fd, nstype);
+	if (ret < 0) {
+		slurm_error("pyxis: couldn't join %s namespace: %s", name, strerror(errno));
+		return (-1);
+	}
+
+	return (0);
+}
+
 int slurm_spank_task_init(spank_t sp, int ac, char **av)
 {
 	int ret;
@@ -1603,51 +1627,26 @@ int slurm_spank_task_init(spank_t sp, int ac, char **av)
 			goto fail;
 	}
 
+	/* Join namespaces in the required order. */
 	if (!context.job.privileged) {
-		ret = setns(context.container.userns_fd, CLONE_NEWUSER);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't join user namespace: %s", strerror(errno));
+		if (join_namespace(context.container.userns_fd, CLONE_NEWUSER, "user") < 0)
 			goto fail;
-		}
 	}
 
-	if (context.container.cgroupns_fd >= 0) {
-		ret = setns(context.container.cgroupns_fd, CLONE_NEWCGROUP);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't join cgroup namespace: %s", strerror(errno));
-			goto fail;
-		}
-	}
-
-	ret = setns(context.container.mntns_fd, CLONE_NEWNS);
-	if (ret < 0) {
-		slurm_error("pyxis: couldn't join mount namespace: %s", strerror(errno));
+	if (join_namespace(context.container.cgroupns_fd, CLONE_NEWCGROUP, "cgroup") < 0)
 		goto fail;
-	}
 
-	if (context.container.ipcns_fd >= 0) {
-		ret = setns(context.container.ipcns_fd, CLONE_NEWIPC);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't join IPC namespace: %s", strerror(errno));
-			goto fail;
-		}
-	}
+	if (join_namespace(context.container.mntns_fd, CLONE_NEWNS, "mount") < 0)
+		goto fail;
 
-	if (context.container.utsns_fd >= 0) {
-		ret = setns(context.container.utsns_fd, CLONE_NEWUTS);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't join UTS namespace: %s", strerror(errno));
-			goto fail;
-		}
-	}
+	if (join_namespace(context.container.ipcns_fd, CLONE_NEWIPC, "IPC") < 0)
+		goto fail;
 
-	if (context.container.netns_fd >= 0) {
-		ret = setns(context.container.netns_fd, CLONE_NEWNET);
-		if (ret < 0) {
-			slurm_error("pyxis: couldn't join network namespace: %s", strerror(errno));
-			goto fail;
-		}
-	}
+	if (join_namespace(context.container.utsns_fd, CLONE_NEWUTS, "UTS") < 0)
+		goto fail;
+
+	if (join_namespace(context.container.netns_fd, CLONE_NEWNET, "network") < 0)
+		goto fail;
 
 	/* No need to chdir(root) + chroot(".") since enroot does a pivot_root. */
 	if (context.args->workdir != NULL) {
