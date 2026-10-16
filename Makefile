@@ -8,6 +8,10 @@ CONFDIR   := $(abspath $(DESTDIR)/$(datadir)/pyxis)
 
 PYXIS_VER ?= 0.24.0
 
+ifneq ($(filter deb,$(MAKECMDGOALS)),)
+include debian/slurm.mk
+endif
+
 PLUGIN := spank_pyxis.so
 CONF   := pyxis.conf
 
@@ -48,6 +52,15 @@ orig: clean
 	tar -caf ../nvslurm-plugin-pyxis_$(PYXIS_VER).orig.tar.xz --owner=root --group=root --exclude=.git .
 
 deb: clean
+	@set -e; \
+	version=$$(dpkg-parsechangelog -S Version); \
+	version=$${version%%+slurm*}+slurm$(SLURM_SERIES); \
+	changelog=$$(mktemp); \
+	cp debian/changelog "$$changelog"; \
+	trap 'cp "$$changelog" debian/changelog; rm -f "$$changelog"' EXIT; \
+	trap 'exit 1' HUP INT TERM; \
+	dch --maintmaint --newversion "$$version" --distribution UNRELEASED \
+	    "Build against Slurm $(SLURM_VERSION)."; \
 	debuild -us -uc -G -i -tc
 
 rpm: clean

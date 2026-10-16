@@ -28,6 +28,14 @@ $ sudo systemctl restart slurmd
 ```
 
 #### With a deb package
+Install `debhelper`, `devscripts`, and the Slurm development package matching
+your cluster (`slurm-smd-dev` from SchedMD or `libslurm-dev` from Debian).
+
+`make deb` includes the Slurm series in the package version, for example
+`0.24.0-1+slurm25.11`, and adds dependencies on that Slurm series. Rebuild
+Pyxis when upgrading to a new Slurm series. The source changelog is restored
+after the build.
+
 ```console
 $ make orig
 $ make deb

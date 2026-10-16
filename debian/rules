@@ -3,6 +3,17 @@
 
 #export DH_VERBOSE=1
 
+include /usr/share/dpkg/architecture.mk
+include debian/slurm.mk
+
+ifneq ($(MAKECMDGOALS),clean)
+DEB_VERSION := $(shell dpkg-parsechangelog -S Version)
+ifeq ($(filter %+slurm$(SLURM_SERIES),$(DEB_VERSION)),)
+$(error Package version $(DEB_VERSION) must end in +slurm$(SLURM_SERIES); \
+    use make deb to prepare the version)
+endif
+endif
+
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 %:
@@ -13,3 +24,8 @@ endif
 
 override_dh_auto_install:
 	dh_auto_install -- prefix= libdir=/usr/lib/$(DEB_HOST_MULTIARCH) datarootdir=/usr/share
+
+override_dh_gencontrol:
+	dh_gencontrol -- \
+	    -V"slurm:Depends=$(SLURM_PACKAGE) (>= $(SLURM_VERSION)), \
+	    $(SLURM_PACKAGE) (<< $(SLURM_NEXT))"
