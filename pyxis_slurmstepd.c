@@ -726,7 +726,8 @@ static int enroot_container_create(void)
 
 	if (context.container.use_enroot_import || context.container.use_enroot_load || context.container.use_importer) {
 		if (strncmp("docker://", context.args->image, sizeof("docker://") - 1) == 0 ||
-		    strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) == 0) {
+		    strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) == 0 ||
+		    strncmp("podman://", context.args->image, sizeof("podman://") - 1) == 0) {
 			enroot_uri = strdup(context.args->image);
 			if (enroot_uri == NULL)
 				goto fail;
@@ -1376,7 +1377,8 @@ int slurm_spank_user_init(spank_t sp, int ac, char **av)
 			} else {
 				/* No importer configured, use the builtin enroot import/load path */
 				context.container.use_enroot_load = context.config.use_enroot_load &&
-					strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) != 0;
+					strncmp("dockerd://", context.args->image, sizeof("dockerd://") - 1) != 0 &&
+					strncmp("podman://", context.args->image, sizeof("podman://") - 1) != 0;
 				context.container.use_enroot_import = !context.container.use_enroot_load;
 
 				if (context.container.use_enroot_import) {
