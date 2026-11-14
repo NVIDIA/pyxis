@@ -488,15 +488,6 @@ static int spank_option_container_name(int val, const char *optarg, int remote)
 		return (-1);
 	}
 
-	/* Slurm can call us twice with the same value, check if it's a different value than before. */
-	if (pyxis_args.container_name != NULL) {
-		if (strcmp(pyxis_args.container_name, optarg) == 0)
-			return (0);
-
-		slurm_error("pyxis: --container-name specified multiple times");
-		return (-1);
-	}
-
 	optarg_dup = strdup(optarg);
 	if (optarg_dup == NULL) {
 		slurm_error("pyxis: could not allocate memory");
@@ -517,6 +508,18 @@ static int spank_option_container_name(int val, const char *optarg, int remote)
 	if (strcmp(flags, "auto") != 0 && strcmp(flags, "create") != 0 &&
 	    strcmp(flags, "exec") != 0 && strcmp(flags, "no_exec") != 0) {
 		slurm_error("pyxis: --container-name: flag must be \"auto\", \"create\", \"exec\" or \"no_exec\"");
+		goto fail;
+	}
+
+	/* Slurm can call us twice with the same value, check if it's a different value than before. */
+	if (pyxis_args.container_name != NULL) {
+		if (strcmp(pyxis_args.container_name, name) == 0 &&
+		    strcmp(pyxis_args.container_name_flags, flags) == 0) {
+			rv = 0;
+			goto fail;
+		}
+
+		slurm_error("pyxis: --container-name specified multiple times");
 		goto fail;
 	}
 
